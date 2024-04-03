@@ -4,11 +4,13 @@ use crate::{
         init_textures,
     },
     updates::update_functions::{
-        update_agent_position, update_cpu_read_buffers, update_pheremone_trails,
+        update_agent_position, update_controls, update_cpu_read_buffers, update_pheremone_trails,
     },
     BindGroups, Buffers, Params, Pipelines, ShaderModules, Textures, VERTICES,
 };
 use std::sync::Arc;
+
+use super::control_state::KeyboardState;
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
@@ -25,6 +27,7 @@ pub(crate) struct State<'a> {
     pub(crate) bind_groups: BindGroups,
     pub(crate) pipelines: Pipelines,
     pub(crate) textures: Textures,
+    pub(crate) controls: KeyboardState,
     // Keep window at the bottom,
     // must be dropped after surface
     pub(crate) window: std::sync::Arc<winit::window::Window>,
@@ -93,6 +96,7 @@ impl<'a> State<'a> {
         let textures = init_textures(&device);
         let bind_groups = init_bind_groups(&device, &buffers, &textures.phm_view);
         let pipelines = init_pipelines(&device, &bind_groups, &shader_modules);
+        let controls = KeyboardState::new();
 
         Self {
             instance,
@@ -111,6 +115,7 @@ impl<'a> State<'a> {
             buffers,
             bind_groups,
             textures,
+            controls,
         }
     }
 
@@ -140,6 +145,7 @@ impl<'a> State<'a> {
         update_agent_position(&self);
         update_pheremone_trails(&self);
         update_cpu_read_buffers(&self);
+        update_controls(self);
     }
 
     pub(crate) fn render(&mut self) -> Result<(), wgpu::SurfaceError> {

@@ -28,7 +28,6 @@ fn main() {
         .expect("window should open");
 
     let mut state = block_on(State::new(window.into()));
-    let mut keyboard_state = KeyboardState::new();
     let app_time = Instant::now();
 
     state.init_slime();
@@ -63,12 +62,14 @@ fn main() {
                     state.window.request_redraw();
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
-                    keyboard_state.handle_keyboard_input(event);
+                    state.controls.handle_keyboard_input(event);
                 }
-                WindowEvent::Focused(_) => {
-                    // Clear the keys HashSet when the window gains/loses focus
-                    keyboard_state.clear_keys();
-                    println!("Window lost focus, cleared keys.");
+                WindowEvent::Focused(focused) => {
+                    if !focused {
+                        // Clear the keys HashSet when the window loses focus
+                        state.controls.clear_keys();
+                        println!("Window lost focus, cleared keys.");
+                    }
                 }
                 _ => {}
             },
