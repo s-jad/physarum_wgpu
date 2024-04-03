@@ -1,4 +1,14 @@
-use crate::{state::app_state::State, PheremoneParams, Slime, SlimeParams, ViewParams, NUM_AGENTS};
+use std::{thread, time::Duration};
+
+use winit::keyboard::{self, KeyCode, PhysicalKey};
+
+use crate::{
+    state::{
+        app_state::State,
+        control_state::{print_gpu_data, KeyboardMode},
+    },
+    PheremoneParams, Slime, SlimeParams, ViewParams, NUM_AGENTS,
+};
 
 pub(crate) fn update_view_params_buffer(state: &State) {
     let new_view_params = ViewParams {
@@ -115,4 +125,40 @@ pub(crate) fn update_pheremone_trails(state: &State) {
     }
 
     state.queue.submit(Some(encoder.finish()));
+}
+
+pub(crate) fn update_controls(state: &mut State) {
+    if state.controls.key_pressed(PhysicalKey::Code(KeyCode::KeyD)) {
+        state.controls.set_mode(KeyboardMode::DEBUG);
+    } else if state
+        .controls
+        .key_pressed(PhysicalKey::Code(KeyCode::Digit1))
+    {
+        state.controls.set_mode(KeyboardMode::VIEW);
+    } else if state
+        .controls
+        .key_pressed(PhysicalKey::Code(KeyCode::Digit2))
+    {
+        state.controls.set_mode(KeyboardMode::SLIME);
+    } else if state
+        .controls
+        .key_pressed(PhysicalKey::Code(KeyCode::Digit3))
+    {
+        state.controls.set_mode(KeyboardMode::PHEREMONES);
+    }
+
+    match state.controls.get_mode() {
+        KeyboardMode::DEBUG => {
+            print_gpu_data::<[f32; 4]>(
+                &state.device,
+                &state.buffers.cpu_read_generic_debug_buf,
+                "Debug",
+            );
+            thread::sleep(Duration::from_millis(50));
+            state.controls.set_mode(KeyboardMode::VIEW)
+        }
+        KeyboardMode::SLIME => {}
+        KeyboardMode::PHEREMONES => {}
+        KeyboardMode::VIEW => {}
+    }
 }
