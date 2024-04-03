@@ -1,0 +1,19 @@
+[package]
+name = "slime-wgpu"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+[dependencies]
+bytemuck = { version = "1.15.0", features = ["derive"] }
+futures = "0.3.30"
+wgpu = { version = "0.19.3", features = ["api_log_info", "strict_asserts"] }
+winit = "0.29.15"
