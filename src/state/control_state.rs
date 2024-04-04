@@ -6,6 +6,7 @@ pub(crate) enum KeyboardMode {
     SLIME,
     PHEREMONES,
     VIEW,
+    PRINT,
 }
 
 #[derive(Debug, Clone)]
@@ -39,8 +40,12 @@ impl KeyboardState {
         self.keys.clear();
     }
 
-    pub(crate) fn get_mode(&self) -> KeyboardMode {
-        self.mode
+    pub(crate) fn get_keys(&self) -> &HashSet<winit::keyboard::PhysicalKey> {
+        &self.keys
+    }
+
+    pub(crate) fn get_mode(&self) -> &KeyboardMode {
+        &self.mode
     }
 
     pub(crate) fn set_mode(&mut self, new_mode: KeyboardMode) {
