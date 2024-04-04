@@ -31,6 +31,7 @@ pub(crate) struct State<'a> {
     // Keep window at the bottom,
     // must be dropped after surface
     pub(crate) window: std::sync::Arc<winit::window::Window>,
+    pub(crate) app_time: std::time::Instant,
 }
 
 impl<'a> State<'a> {
@@ -38,6 +39,7 @@ impl<'a> State<'a> {
         let size = window.inner_size();
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+        let app_time = std::time::Instant::now();
 
         // SURFACE
         let surface = instance
@@ -116,6 +118,7 @@ impl<'a> State<'a> {
             bind_groups,
             textures,
             controls,
+            app_time,
         }
     }
 
@@ -199,5 +202,9 @@ impl<'a> State<'a> {
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
         }
+    }
+
+    pub(crate) fn get_time(&self) -> f32 {
+        self.app_time.elapsed().as_secs_f32()
     }
 }

@@ -1,14 +1,9 @@
 mod state;
 use state::app_state::State;
-use state::control_state::KeyboardState;
 mod structs;
 use structs::*;
-mod updates;
-
 mod init;
-
-use futures::executor::block_on;
-use std::time::Instant;
+mod updates;
 
 use winit::{
     dpi::PhysicalSize,
@@ -27,8 +22,7 @@ fn main() {
         .build(&event_loop)
         .expect("window should open");
 
-    let mut state = block_on(State::new(window.into()));
-    let app_time = Instant::now();
+    let mut state = futures::executor::block_on(State::new(window.into()));
 
     state.init_slime();
 
@@ -37,7 +31,7 @@ fn main() {
             Event::WindowEvent { ref event, .. } => match event {
                 WindowEvent::CloseRequested => elwt.exit(),
                 WindowEvent::RedrawRequested => {
-                    let elapsed_time = app_time.elapsed().as_secs_f32();
+                    let elapsed_time = state.get_time();
                     let time_bytes = elapsed_time.to_ne_bytes();
                     state.queue.write_buffer(
                         &state.buffers.time_uniform_buf,
