@@ -37,15 +37,25 @@ pub(crate) struct TimeUniform {
     pub(crate) time: f32,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct ConstUniforms {
+    pub(crate) phm_height: f32,
+    pub(crate) phm_width: f32,
+}
+
 #[derive(Debug)]
 pub(crate) struct Buffers {
     pub(crate) vertex_buf: wgpu::Buffer,
     pub(crate) time_uniform_buf: wgpu::Buffer,
+    pub(crate) const_uniform_buf: wgpu::Buffer,
     pub(crate) view_params_buf: wgpu::Buffer,
     pub(crate) slime_pos_buf: wgpu::Buffer,
     pub(crate) cpu_read_slime_pos_buf: wgpu::Buffer,
     pub(crate) generic_debug_buf: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug_buf: wgpu::Buffer,
+    pub(crate) generic_debug_array_buf: wgpu::Buffer,
+    pub(crate) cpu_read_generic_debug_array_buf: wgpu::Buffer,
     pub(crate) slime_params_buf: wgpu::Buffer,
     pub(crate) pheremone_params_buf: wgpu::Buffer,
 }
@@ -59,6 +69,8 @@ pub(crate) struct BindGroups {
     pub(crate) compute_bgl: wgpu::BindGroupLayout,
     pub(crate) phm_bg: wgpu::BindGroup,
     pub(crate) phm_bgl: wgpu::BindGroupLayout,
+    pub(crate) sampled_phm_bg: wgpu::BindGroup,
+    pub(crate) sampled_phm_bgl: wgpu::BindGroupLayout,
 }
 
 #[derive(Debug)]
@@ -80,9 +92,10 @@ pub(crate) struct Pipelines {
 
 #[derive(Debug)]
 pub(crate) struct Textures {
-    pub(crate) pheremone_heat_map: wgpu::Texture,
+    pub(crate) phm: wgpu::Texture,
     pub(crate) phm_sampler: wgpu::Sampler,
     pub(crate) phm_view: wgpu::TextureView,
+    pub(crate) phm_extent: wgpu::Extent3d,
 }
 
 #[repr(C)]
@@ -125,6 +138,7 @@ pub(crate) struct PheremoneParams {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct ViewParams {
+    pub(crate) shift_modifier: f32,
     pub(crate) x_shift: f32,
     pub(crate) y_shift: f32,
     pub(crate) zoom: f32,
