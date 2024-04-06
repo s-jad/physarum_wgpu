@@ -1,7 +1,13 @@
+// 4 floats per pixel for Rgba32Float
+const TEXTURE_BUF_SIZE: usize =
+    SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize * 4 * (std::mem::size_of::<f32>());
+
+use wgpu::util::DeviceExt;
+
 use crate::{
-    vertices_as_bytes, BindGroups, Buffers, Params, PheremoneParams, Pipelines, ShaderModules,
-    Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS, SCREEN_HEIGHT, SCREEN_WIDTH,
-    VERTICES,
+    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
+    ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
+    SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
 };
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
@@ -52,9 +58,10 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
 
 pub(crate) fn init_params() -> Params {
     let view_params = ViewParams {
+        shift_modifier: 1.0,
         x_shift: 0.0,
         y_shift: 0.0,
-        zoom: 0.01,
+        zoom: 1.0,
         time_modifier: 0.01,
     };
 
@@ -62,9 +69,9 @@ pub(crate) fn init_params() -> Params {
         max_velocity: 0.25,
         min_velocity: -0.25,
         turn_factor: 0.005,
-        sensor_dist: 5.0,
+        sensor_dist: 0.05,
         sensor_offset: 1.0472, // 60degrees in Radians
-        sensor_radius: 4.0,
+        sensor_radius: 0.04,
     };
 
     let pheremone_params = PheremoneParams {
@@ -99,12 +106,25 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         mapped_at_creation: false,
     });
 
+    let const_uniform_buf = wgpu::util::DeviceExt::create_buffer_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Texture Extent Buffer"),
+            contents: bytemuck::cast_slice(&[ConstUniforms {
+                phm_height: SCREEN_HEIGHT as f32,
+                phm_width: SCREEN_WIDTH as f32,
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        },
+    );
+
     // PARAMETER BUFFERS
     let view_params_buf = wgpu::util::DeviceExt::create_buffer_init(
         device,
         &wgpu::util::BufferInitDescriptor {
             label: Some("Parameters Storage Buffer"),
             contents: bytemuck::cast_slice(&[
+                params.view_params.shift_modifier,
                 params.view_params.x_shift,
                 params.view_params.y_shift,
                 params.view_params.zoom,
@@ -176,14 +196,33 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         mapped_at_creation: false,
     });
 
+    let generic_debug_array_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Debug Shaders Buffer - ARRAY"),
+        size: (std::mem::size_of::<[[f32; 4]; NUM_AGENTS]>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
+    let cpu_read_generic_debug_array_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("CPU Readable Buffer ARRAY - Debug Shaders"),
+        size: (std::mem::size_of::<[[f32; 4]; NUM_AGENTS]>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
     Buffers {
         vertex_buf,
         time_uniform_buf,
+        const_uniform_buf,
         view_params_buf,
         slime_pos_buf,
         cpu_read_slime_pos_buf,
         generic_debug_buf,
         cpu_read_generic_debug_buf,
+        generic_debug_array_buf,
+        cpu_read_generic_debug_array_buf,
         slime_params_buf,
         pheremone_params_buf,
     }
@@ -193,27 +232,52 @@ pub(crate) fn init_bind_groups(
     device: &wgpu::Device,
     buffers: &Buffers,
     texture_view: &wgpu::TextureView,
+    phm_sampler: &wgpu::Sampler,
+    phm_extent: &wgpu::Extent3d,
 ) -> BindGroups {
-    let uniform_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<TimeUniform>() as _),
-            },
-            count: None,
-        }],
-        label: Some("uniform_bind_group_layout"),
-    });
+    let uniform_bgl =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<TimeUniform>() as _
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<ConstUniforms>() as _,
+                        ),
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("uniform_bind_group_layout"),
+        });
 
     let uniform_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &uniform_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffers.time_uniform_buf.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffers.time_uniform_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: buffers.const_uniform_buf.as_entire_binding(),
+            },
+        ],
         label: Some("uniforms_bind_group"),
     });
 
@@ -278,6 +342,18 @@ pub(crate) fn init_bind_groups(
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
+                    binding: 8,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
+                            [[f32; 4]; NUM_AGENTS],
+                        >() as _),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
                     binding: 9,
                     visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -309,6 +385,10 @@ pub(crate) fn init_bind_groups(
                 resource: buffers.pheremone_params_buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 8,
+                resource: buffers.generic_debug_array_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 9,
                 resource: buffers.generic_debug_buf.as_entire_binding(),
             },
@@ -317,40 +397,63 @@ pub(crate) fn init_bind_groups(
     });
 
     let phm_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::ReadWrite,
-                    format: wgpu::TextureFormat::Rgba32Float,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
-                count: None,
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::COMPUTE,
+            ty: wgpu::BindingType::StorageTexture {
+                access: wgpu::StorageTextureAccess::ReadWrite,
+                format: wgpu::TextureFormat::Rgba32Float,
+                view_dimension: wgpu::TextureViewDimension::D2,
             },
-            //       wgpu::BindGroupLayoutEntry {
-            //           binding: 1,
-            //           visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-            //           ty: BindingType::Sampler(SamplerBindingType::Filtering),
-            //           count: None,
-            //       },
-        ],
+            count: None,
+        }],
         label: Some("phm_bgl"),
     });
 
     let phm_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout: &phm_bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::TextureView(&texture_view),
+        }],
+        label: Some("phm_bg"),
+    });
+
+    let sampled_phm_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+        label: Some("sampled_phm_bgl"),
+    });
+
+    let sampled_phm_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &sampled_phm_bgl,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(&texture_view),
             },
-            //    wgpu::BindGroupEntry {
-            //        binding: 1,
-            //        resource: wgpu::BindingResource::Sampler(&phm_sampler),
-            //    },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(phm_sampler),
+            },
         ],
-        label: Some("phm_bg"),
+        label: Some("sampled_texture_bg"),
     });
 
     BindGroups {
@@ -362,6 +465,8 @@ pub(crate) fn init_bind_groups(
         compute_bgl,
         phm_bg,
         phm_bgl,
+        sampled_phm_bg,
+        sampled_phm_bgl,
     }
 }
 
@@ -376,6 +481,7 @@ pub(crate) fn init_pipelines(
             &bind_groups.compute_bgl,
             &bind_groups.uniform_bgl,
             &bind_groups.param_bgl,
+            &bind_groups.sampled_phm_bgl,
         ],
         push_constant_ranges: &[],
     });
@@ -461,7 +567,7 @@ pub(crate) fn init_pipelines(
     }
 }
 
-pub(crate) fn init_textures(device: &wgpu::Device) -> Textures {
+pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textures {
     let phm_texture_view_desc = wgpu::TextureViewDescriptor {
         label: Some("Phermone Heatmap Texture View"),
         format: Some(wgpu::TextureFormat::Rgba32Float),
@@ -479,26 +585,28 @@ pub(crate) fn init_textures(device: &wgpu::Device) -> Textures {
         depth_or_array_layers: 1,
     };
 
-    let pheremone_heat_map = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Read-Write Storage Texture"),
-        size: texture_extent,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba32Float,
-        usage: wgpu::TextureUsages::STORAGE_BINDING
-            | wgpu::TextureUsages::TEXTURE_BINDING
-            | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[wgpu::TextureFormat::Rgba32Float],
-    });
+    let phm = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Read-Write Storage Texture"),
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::Rgba32Float],
+        },
+        wgpu::util::TextureDataOrder::default(),
+        &[0; TEXTURE_BUF_SIZE],
+    );
 
-    let phm_view = pheremone_heat_map.create_view(&phm_texture_view_desc);
+    let phm_view = phm.create_view(&phm_texture_view_desc);
 
     let phm_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("Pheremone Heat Map Sampler"),
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::FilterMode::Nearest,
@@ -506,8 +614,9 @@ pub(crate) fn init_textures(device: &wgpu::Device) -> Textures {
     });
 
     Textures {
-        pheremone_heat_map,
+        phm,
         phm_sampler,
         phm_view,
+        phm_extent: texture_extent,
     }
 }
