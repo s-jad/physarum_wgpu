@@ -2,15 +2,23 @@
 const PI: f32 = 3.14159265;
 const NUM_AGENTS: u32 = 256u;
 const NUM_PREDATORS: u32 = 4u;
+const SCREEN_WIDTH: f32 = 1376.0;
+const SCREEN_HEIGHT: f32 = 768.0;
 
 // STRUCTS
+struct VertexOutput {
+    @builtin(position) frag_coord: vec4<f32>,
+    @location(0) tex_coord: vec2<f32>,
+};
 struct TimeUniform {
     time: f32,
 };
-struct ResolutionUniform {
-  xy: vec2<f32>,
+struct ConstUniforms {
+  phm_height: f32,
+  phm_width: f32,
 }
 struct ViewParams {
+  shift_modifier: f32,
   x_shift: f32,
   y_shift: f32,
   zoom: f32,
@@ -36,6 +44,10 @@ struct PheremoneParams {
   diffusion_factor: f32,
   decay_factor: f32,
 }
+struct TextureExtent {
+  height: f32,
+  width: f32,
+}
 
 // GROUPS AND BINDINGS
 @group(0) @binding(0)
@@ -49,17 +61,24 @@ var<storage, read_write> debug: vec4<f32>;
 
 @group(1) @binding(0)
 var<uniform> tu: TimeUniform;
+@group(1) @binding(1)
+  var<uniform> cu: ConstUniforms;
 
 @group(2) @binding(0)
 var<storage, read_write> vp: ViewParams;
 
-// ASPECT RATIO
-const screen: vec2<f32> = vec2(1366.4, 768.0);
+@group(3) @binding(0)
+var phm: texture_2d<f32>;
+@group(3) @binding(1)
+var phm_sampler: sampler;
 
+
+// ASPECT RATIO
+const screen: vec2<f32> = vec2(SCREEN_WIDTH, SCREEN_HEIGHT);
 fn scale_aspect(fc: vec2<f32>) -> vec2<f32> {
-  // Scale from 0.0 --> 1.0 to -1.0 --> 1.0 
-  var uv: vec2<f32> = ((fc * 2.0) - screen) / max(screen.x, screen.y);
-  uv.y *= -1.0;
+  // Scale from screen dimensions to 0.0 --> 1.0
+  var uv: vec2<f32> = fc / screen;
+  uv.y = 1.0 - uv.y; // Flip Y axis if necessary
   return uv;
 }
 
@@ -86,32 +105,34 @@ fn shash22(pos: vec2<f32>) -> vec2<f32> {
 }
 
 @fragment
-fn main(@builtin(position) FragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+fn main(in: VertexOutput) -> @location(0) vec4<f32> {
   let t: f32 = tu.time * vp.time_modifier;
-  let ts: f32 = sin(t);
-  var uv: vec2<f32> = scale_aspect(FragCoord.xy); // Scale to -1.0 -> 1.0 + fix aspect ratio
+  debug = in.frag_coord;
+  var uv: vec2<f32> = scale_aspect(in.frag_coord.xy); // Scale to 0.0 -> 1.0 + fix aspect ratio
+  var uv0 = uv;
   uv.x += vp.x_shift * vp.zoom;
   uv.y += vp.y_shift * vp.zoom;
   uv /= vp.zoom;
-  var uv0 = uv;
   var color = vec3(0.0);
 // -----------------------------------------------------------------------------------------------
 
   for (var i: u32 = 0u; i < NUM_AGENTS; i++) {
     // Show Agents
     let sd = distance(uv, agents[i].pos);
-    color += 1.0 - smoothstep(0.0, 1.0, sd);
+    color += 1.0 - smoothstep(0.0, 0.003, sd);
     
-   //// Show Sensors
-   //let sd1 = distance(uv, agents[i].s1_pos);
-   //let sd2 = distance(uv, agents[i].s2_pos);
-   //let sd3 = distance(uv, agents[i].s3_pos);
-   //color += vec3<f32>(0.3, 0.0, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd1));
-   //color += vec3<f32>(0.0, 0.3, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd2));
-   //color += vec3<f32>(0.0, 0.0, 0.3) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd3));
+    // Show Sensors
+    //let sd1 = distance(uv, agents[i].s1_pos);
+    //let sd2 = distance(uv, agents[i].s2_pos);
+    //let sd3 = distance(uv, agents[i].s3_pos);
+    //color += vec3<f32>(0.3, 0.0, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd1));
+    //color += vec3<f32>(0.0, 0.3, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd2));
+    //color += vec3<f32>(0.0, 0.0, 0.3) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd3));
   }
+
+  let tex_sample = textureSample(phm, phm_sampler, uv);
+  color += tex_sample.xyz;
   
 // -----------------------------------------------------------------------------------------------
-  
   return vec4<f32>(color, 1.0);
 }
