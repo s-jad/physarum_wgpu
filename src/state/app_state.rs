@@ -10,7 +10,7 @@ use crate::{
 };
 use std::sync::Arc;
 
-use super::control_state::KeyboardState;
+use super::control_state::{print_gpu_data, KeyboardState};
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
@@ -28,10 +28,10 @@ pub(crate) struct State<'a> {
     pub(crate) pipelines: Pipelines,
     pub(crate) textures: Textures,
     pub(crate) controls: KeyboardState,
+    pub(crate) app_time: std::time::Instant,
     // Keep window at the bottom,
     // must be dropped after surface
     pub(crate) window: std::sync::Arc<winit::window::Window>,
-    pub(crate) app_time: std::time::Instant,
 }
 
 impl<'a> State<'a> {
@@ -56,13 +56,16 @@ impl<'a> State<'a> {
             .await
             .expect("get_dev_storage_texture:: adapter should work");
 
+        let limits = adapter.limits();
+
         // DEVICE/QUEUE
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("dev_storage_texture_capable Device"),
-                    required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
-                    required_limits: wgpu::Limits::default(),
+                    required_features: wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                        | wgpu::Features::FLOAT32_FILTERABLE,
+                    required_limits: limits,
                 },
                 None,
             )
@@ -95,11 +98,18 @@ impl<'a> State<'a> {
         let shader_modules = init_shader_modules(&device);
         let params = init_params();
         let buffers = init_buffers(&device, &params);
-        let textures = init_textures(&device);
-        let bind_groups = init_bind_groups(&device, &buffers, &textures.phm_view);
+        let textures = init_textures(&device, &queue);
+        let bind_groups = init_bind_groups(
+            &device,
+            &buffers,
+            &textures.phm_view,
+            &textures.phm_sampler,
+            &textures.phm_extent,
+        );
         let pipelines = init_pipelines(&device, &bind_groups, &shader_modules);
         let controls = KeyboardState::new();
 
+        println!("adadpter.limts: {:#?}", adapter.limits());
         Self {
             instance,
             adapter,
@@ -107,9 +117,6 @@ impl<'a> State<'a> {
             queue,
             surface,
             surface_config,
-            // Keep at bottom, must be dropped after surface
-            // and declared after it
-            window,
             size,
             pipelines,
             shader_modules,
@@ -119,6 +126,9 @@ impl<'a> State<'a> {
             textures,
             controls,
             app_time,
+            // Keep at bottom, must be dropped after surface
+            // and declared after it
+            window,
         }
     }
 
@@ -182,6 +192,7 @@ impl<'a> State<'a> {
             render_pass.set_bind_group(0, &self.bind_groups.compute_bg, &[]);
             render_pass.set_bind_group(1, &self.bind_groups.uniform_bg, &[]);
             render_pass.set_bind_group(2, &self.bind_groups.param_bg, &[]);
+            render_pass.set_bind_group(3, &self.bind_groups.sampled_phm_bg, &[]);
             render_pass.set_vertex_buffer(0, self.buffers.vertex_buf.slice(..));
 
             let vertex_range = 0..VERTICES.len() as u32;
