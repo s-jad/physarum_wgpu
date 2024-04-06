@@ -1,3 +1,5 @@
+const NUM_AGENTS = 256u;
+
 struct TimeUniform {
   time: f32,
 }
@@ -10,6 +12,9 @@ struct Slime {
 }
 
 @group(0) @binding(0) var<storage, read_write> agents: array<Slime>;
+@group(0) @binding(8) var<storage, read_write> debug_array: array<vec4<f32>, NUM_AGENTS>;
+@group(0) @binding(9) var<storage, read_write> debug: vec4<f32>;
+
 @group(1) @binding(0) var<uniform> tu: TimeUniform;
 @group(2) @binding(0) var phm: texture_storage_2d<rgba32float, read_write>;
 
@@ -36,7 +41,7 @@ fn hybrid_taus(st: vec4<u32>) -> RandomResult {
 
     var rand: RandomResult;
     rand.state = state;
-    rand.value = 2.0  * f32(state.x ^ state.y ^ state.z ^ state.w) / f32(0xFFFFFFFFu) - 1.0;
+    rand.value = f32(state.x ^ state.y ^ state.z ^ state.w) / f32(0xFFFFFFFFu);
 
     return rand;
 }
@@ -53,7 +58,7 @@ fn compute_slime_positions(@builtin(global_invocation_id) id: vec3<u32>) {
   // Random vel(x,y)
   var rvx: RandomResult = hybrid_taus(ry.state);
   var rvy: RandomResult = hybrid_taus(rvx.state);
-
-  agents[id.x].pos = vec2<f32>(rx.value * 100.0, ry.value * 70.0);
-  agents[id.x].vel = vec2<f32>(rvx.value, rvy.value) * 0.2;
+  
+  agents[id.x].pos = vec2<f32>(rx.value, ry.value);
+  agents[id.x].vel = vec2<f32>(rvx.value, rvy.value) * 0.05;
 }
