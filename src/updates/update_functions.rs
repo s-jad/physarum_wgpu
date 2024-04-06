@@ -7,11 +7,12 @@ use crate::{
         app_state::State,
         control_state::{print_gpu_data, KeyboardMode},
     },
-    PheremoneParams, Slime, SlimeParams, ViewParams, NUM_AGENTS,
+    PheremoneParams, Slime, SlimeParams, ViewParams, NUM_AGENTS, SCREEN_HEIGHT, SCREEN_WIDTH,
 };
 
 pub(crate) fn update_view_params_buffer(state: &State) {
     let new_view_params = ViewParams {
+        shift_modifier: state.params.view_params.shift_modifier,
         x_shift: state.params.view_params.x_shift,
         y_shift: state.params.view_params.y_shift,
         zoom: state.params.view_params.zoom,
@@ -79,6 +80,14 @@ pub(crate) fn update_cpu_read_buffers(state: &State) {
         (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
     );
 
+    encoder.copy_buffer_to_buffer(
+        &state.buffers.generic_debug_array_buf,
+        0,
+        &state.buffers.cpu_read_generic_debug_array_buf,
+        0,
+        (std::mem::size_of::<[[f32; 4]; NUM_AGENTS]>()) as wgpu::BufferAddress,
+    );
+
     state.queue.submit(Some(encoder.finish()));
 }
 
@@ -121,7 +130,11 @@ pub(crate) fn update_pheremone_trails(state: &State) {
         compute_pass.set_bind_group(0, &state.bind_groups.compute_bg, &[]);
         compute_pass.set_bind_group(1, &state.bind_groups.uniform_bg, &[]);
         compute_pass.set_bind_group(2, &state.bind_groups.phm_bg, &[]);
-        compute_pass.dispatch_workgroups(16, 16, 1); // Adjust workgroup size as needed
+
+        // Calculate the dispatch size based on the texture dimensions and workgroup size
+        let dispatch_size_x = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
+        let dispatch_size_y = ((SCREEN_HEIGHT as u32).saturating_add(28)) / 28;
+        compute_pass.dispatch_workgroups(dispatch_size_x, dispatch_size_y, 1); // Adjust workgroup size as needed
     }
 
     state.queue.submit(Some(encoder.finish()));
@@ -153,19 +166,33 @@ pub(crate) fn update_controls(state: &mut State) {
     }
 
     match state.controls.get_mode() {
-        KeyboardMode::DEBUG => {
-            print_gpu_data::<[f32; 4]>(
-                &state.device,
-                &state.buffers.cpu_read_generic_debug_buf,
-                "Debug",
-            );
-            thread::sleep(Duration::from_millis(50));
-            state.controls.set_mode(KeyboardMode::VIEW)
-        }
+        KeyboardMode::DEBUG => debug_controls(state),
         KeyboardMode::SLIME => slime_controls(state),
         KeyboardMode::PHEREMONES => pheremone_controls(state),
         KeyboardMode::VIEW => view_controls(state),
         KeyboardMode::PRINT => print_controls(state),
+    }
+}
+
+fn debug_controls(state: &mut State) {
+    let pressed = state.controls.get_keys();
+
+    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
+        print_gpu_data::<[f32; 4]>(
+            &state.device,
+            &state.buffers.cpu_read_generic_debug_buf,
+            "Debug",
+        );
+        thread::sleep(Duration::from_millis(50));
+        state.controls.set_mode(KeyboardMode::VIEW);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
+        print_gpu_data::<[[f32; 4]; NUM_AGENTS]>(
+            &state.device,
+            &state.buffers.cpu_read_generic_debug_array_buf,
+            "Debug",
+        );
+        thread::sleep(Duration::from_millis(50));
+        state.controls.set_mode(KeyboardMode::VIEW);
     }
 }
 
@@ -217,7 +244,7 @@ fn slime_controls(state: &mut State) {
 }
 
 fn pheremone_controls(state: &mut State) {
-    let pressed = &state.controls.get_keys();
+    let pressed = state.controls.get_keys();
     let mut dval = 0.0f32;
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
@@ -232,13 +259,11 @@ fn pheremone_controls(state: &mut State) {
         let maxv = &mut state.params.pheremone_params.deposition_amount;
         *maxv = f32::max(0.1, *maxv + (0.003 * dval));
         update_pheremone_params_buffer(state);
-    }
-    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         let minv = &mut state.params.pheremone_params.diffusion_factor;
         *minv = f32::max(0.0, *minv + (0.003 * dval));
         update_pheremone_params_buffer(state);
-    }
-    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
         let tf = &mut state.params.pheremone_params.decay_factor;
         *tf = f32::max(0.0, *tf + (0.003 * dval));
         update_pheremone_params_buffer(state);
@@ -249,22 +274,36 @@ fn view_controls(state: &mut State) {
     let pressed = state.controls.get_keys();
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
-        state.params.view_params.x_shift -= 0.01 / state.params.view_params.zoom;
+        state.params.view_params.x_shift -=
+            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
         update_view_params_buffer(state);
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
-        state.params.view_params.x_shift += 0.01 / state.params.view_params.zoom;
+        state.params.view_params.x_shift +=
+            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
         update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        state.params.view_params.y_shift += 0.01 / state.params.view_params.zoom;
+    }
+
+    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
+        state.params.view_params.y_shift +=
+            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
         update_view_params_buffer(state);
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        state.params.view_params.y_shift -= 0.01 / state.params.view_params.zoom;
+        state.params.view_params.y_shift -=
+            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
+        update_view_params_buffer(state);
+    }
+
+    if pressed.contains(&PhysicalKey::Code(KeyCode::PageDown)) {
+        state.params.view_params.shift_modifier -= 0.1;
+        update_view_params_buffer(state);
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::PageUp)) {
+        state.params.view_params.shift_modifier += 0.1;
         update_view_params_buffer(state);
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyX)) {
         let mz = state.params.view_params.zoom;
         state.params.view_params.zoom -= 0.1 * mz;
         update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyY)) {
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyZ)) {
         let mz = state.params.view_params.zoom;
         state.params.view_params.zoom += 0.1 * mz;
         update_view_params_buffer(state);
