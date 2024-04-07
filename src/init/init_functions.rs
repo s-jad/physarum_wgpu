@@ -1,13 +1,9 @@
-// 4 floats per pixel for Rgba32Float
-const TEXTURE_BUF_SIZE: usize =
-    SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize * 4 * (std::mem::size_of::<f32>());
-
 use wgpu::util::DeviceExt;
 
 use crate::{
-    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
-    ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
-    SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
+    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Offset, Params, PheremoneParams,
+    Pipelines, ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
+    SCREEN_HEIGHT, SCREEN_WIDTH, TEXTURE_BUF_SIZE, VERTICES,
 };
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
@@ -66,18 +62,20 @@ pub(crate) fn init_params() -> Params {
     };
 
     let slime_params = SlimeParams {
-        max_velocity: 0.25,
-        min_velocity: -0.25,
-        turn_factor: 0.005,
+        max_velocity: 0.0002,
+        min_velocity: -0.0002,
+        turn_factor: 0.000001,
+        avoid_factor: 0.05,
         sensor_dist: 0.05,
         sensor_offset: 1.0472, // 60degrees in Radians
-        sensor_radius: 0.04,
+        sensor_radius: 0.10,
     };
 
     let pheremone_params = PheremoneParams {
         deposition_amount: 1.0,
-        diffusion_factor: 0.1,
-        decay_factor: 0.1,
+        deposition_range: 0.003,
+        diffusion_factor: 0.2,
+        decay_factor: 0.05,
     };
 
     Params {
@@ -142,6 +140,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
                 params.slime_params.max_velocity,
                 params.slime_params.min_velocity,
                 params.slime_params.turn_factor,
+                params.slime_params.avoid_factor,
                 params.slime_params.sensor_dist,
                 params.slime_params.sensor_offset,
                 params.slime_params.sensor_radius,
@@ -156,6 +155,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
             label: Some("Pheremone Parameters Storage Buffer"),
             contents: bytemuck::cast_slice(&[
                 params.pheremone_params.deposition_amount,
+                params.pheremone_params.deposition_range,
                 params.pheremone_params.diffusion_factor,
                 params.pheremone_params.decay_factor,
             ]),
@@ -423,7 +423,7 @@ pub(crate) fn init_bind_groups(
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
@@ -433,7 +433,7 @@ pub(crate) fn init_bind_groups(
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
@@ -516,7 +516,14 @@ pub(crate) fn init_pipelines(
         multiview: None,
     });
 
-    let compute_slime_pipeline_layout =
+    let compute_slime_initial_position_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Compute Agent Pipeline Layout"),
+            bind_group_layouts: &[&bind_groups.compute_bgl, &bind_groups.uniform_bgl],
+            push_constant_ranges: &[],
+        });
+
+    let compute_slime_movement_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Compute Agent Pipeline Layout"),
             bind_group_layouts: &[
@@ -529,14 +536,14 @@ pub(crate) fn init_pipelines(
 
     let init_slime_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("Slime Initial Position Pipeline"),
-        layout: Some(&compute_slime_pipeline_layout),
+        layout: Some(&compute_slime_initial_position_pipeline_layout),
         module: &shader_modules.init_slime_shader,
         entry_point: "compute_slime_positions",
     });
 
     let update_slime_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("Update Slime Position Pipeline"),
-        layout: Some(&compute_slime_pipeline_layout),
+        layout: Some(&compute_slime_movement_pipeline_layout),
         module: &shader_modules.update_slime_shader,
         entry_point: "update_slime_positions",
     });
@@ -568,6 +575,17 @@ pub(crate) fn init_pipelines(
 }
 
 pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textures {
+    // let mut texture_size = 0;
+
+    // for level in 0..MIP_LEVEL_COUNT {
+    //     let level_width = SCREEN_WIDTH >> level;
+    //     let level_height = SCREEN_HEIGHT >> level;
+    //     texture_size +=
+    //         level_width as usize * level_height as usize * 4 * (std::mem::size_of::<f32>());
+    // }
+
+    // const TEXTURE_SIZE: usize = texture_size;
+
     let phm_texture_view_desc = wgpu::TextureViewDescriptor {
         label: Some("Phermone Heatmap Texture View"),
         format: Some(wgpu::TextureFormat::Rgba32Float),
@@ -579,7 +597,7 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         array_layer_count: None,
     };
 
-    let texture_extent = wgpu::Extent3d {
+    let phm_extent = wgpu::Extent3d {
         width: SCREEN_WIDTH,
         height: SCREEN_HEIGHT,
         depth_or_array_layers: 1,
@@ -589,7 +607,7 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         queue,
         &wgpu::TextureDescriptor {
             label: Some("Read-Write Storage Texture"),
-            size: texture_extent,
+            size: phm_extent,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -609,7 +627,7 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         label: Some("Pheremone Heat Map Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Nearest,
+        mipmap_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     });
 
@@ -617,6 +635,6 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         phm,
         phm_sampler,
         phm_view,
-        phm_extent: texture_extent,
+        phm_extent,
     }
 }
