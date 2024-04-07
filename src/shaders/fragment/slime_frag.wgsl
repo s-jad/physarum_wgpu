@@ -35,12 +35,14 @@ struct SlimeParams {
   max_velocity: f32,
   min_velocity: f32,
   turn_factor: f32,
+  avoid_factor: f32,
   sensor_dist: f32,
   sensor_offset: f32,
   sensor_radius: f32,
 }
 struct PheremoneParams {
   deposition_amount: f32,
+  deposition_range: f32,
   diffusion_factor: f32,
   decay_factor: f32,
 }
