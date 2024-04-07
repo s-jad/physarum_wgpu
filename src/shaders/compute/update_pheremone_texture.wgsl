@@ -1,13 +1,19 @@
 const NUM_AGENTS: u32 = 256u;
 const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
+const I_SCREEN_WIDTH: i32 = 1376;
+const I_SCREEN_HEIGHT: i32 = 768;
+const DEPOSITION_RANGE: f32 = 0.005;
 
 struct TimeUniform {
-    time: f32,
+  time: f32,
 }
 struct ConstsUniform {
-    phm_height: f32,
-    phm_width: f32,
+  phm_height: f32,
+  phm_width: f32,
+}
+struct Offset {
+  val: vec4<i32>,
 }
 struct Slime {
   pos: vec2<f32>,
@@ -20,12 +26,14 @@ struct SlimeParams {
   max_velocity: f32,
   min_velocity: f32,
   turn_factor: f32,
+  avoid_factor: f32,
   sensor_dist: f32,
   sensor_offset: f32,
   sensor_radius: f32,
 }
 struct PheremoneParams {
   deposition_amount: f32,
+  deposition_range: f32,
   diffusion_factor: f32,
   decay_factor: f32,
 }
@@ -51,25 +59,67 @@ fn scale_tex_aspect(fc: vec2<f32>) -> vec2<f32> {
   return uv;
 }
 
-@compute 
-@workgroup_size(36, 28, 1) 
-fn update_pheremone_heatmap(@builtin(global_invocation_id) id: vec3<u32>) {
-    let tcf: vec2<f32> = vec2<f32>(f32(id.x), f32(id.y)); 
-    var tex_uv: vec2<f32> = scale_tex_aspect(tcf);
-    debug_arr[id.x + id.y] = vec4(tex_uv, tex_uv);
-    let range: f32 = 0.01; // Example range
-    var populated = 0.0;
+fn pheremone_deposition(tex_uv: vec2<f32>, tex_coords: vec2<u32>) {
+  for (var i: u32 = 0u; i < NUM_AGENTS; i++) {
+    let dst: f32 = distance(agents[i].pos, tex_uv);
 
-    for (var i: u32 = 0u; i < NUM_AGENTS; i++) {
-      // Calculate the distance from the agent's position to the current pixel
-      let dst: f32 = distance(agents[i].pos, tex_uv);
-
-      // Check if the distance is within the range
-      if (dst < range) {
-        populated = 1.0;
-      }
+    if (dst < pp.deposition_range) {
+      textureStore(phm, tex_coords, vec4(pp.deposition_amount, 0.0, 0.0, 1.0));
     }
+  }
+}
 
-    // Update the texel value to red
-    textureStore(phm, id.xy, vec4(1.0*populated, 0.0, 0.0, 1.0));
+fn get_neighbour_coords(tex_coords: vec2<i32>, x: i32, y: i32) -> vec2<i32> {
+  return vec2<i32>(
+      max(0, min(I_SCREEN_WIDTH, tex_coords.x + x)),
+      max(0, min(I_SCREEN_HEIGHT, tex_coords.y + y)),
+  );
+}
+
+fn pheremone_diffusion(tex_coords: vec2<u32>) {
+  var total_intensity: f32 = 0.0;
+  var total_weight: f32 = 0.0;
+  let txc_int = vec2<i32>(i32(tex_coords.x), i32(tex_coords.y));
+
+  // Define the range of neighboring pixels to consider
+  let range: i32 = 3; // Expensive
+
+  let tex_color: vec4<f32> = textureLoad(phm, tex_coords);
+
+  // Iterate over a range around the current pixel
+  for (var x: i32 = -range; x <= range; x++) {
+    for (var y: i32 = -range; y <= range; y++) {
+      let neighbor_coords = get_neighbour_coords(txc_int, x, y);
+      let neighbor_color: vec4<f32> = textureLoad(phm, neighbor_coords);
+
+      let distance_weight: f32 = 1.0 / (1.0 + distance(vec2<f32>(f32(x), f32(y)), vec2<f32>(0.0, 0.0)));
+
+      total_intensity += neighbor_color.r * pp.diffusion_factor;
+      total_weight += pp.diffusion_factor;
+    }
+  }
+    
+  // Calculate the average red intensity, considering the weights
+  let avg_intensity: f32 = total_intensity / total_weight;
+  let debug_idx = min(256u, tex_coords.x);
+
+  textureStore(phm, tex_coords, vec4(max(tex_color.r, avg_intensity), 0.0, 0.0, 1.0));
+}
+
+fn pheremone_decay(tex_coords: vec2<u32>) {
+  let current_clr: vec4<f32> = textureLoad(phm, tex_coords);
+  let new_clr = max(0.0, current_clr.r - (pp.decay_factor*current_clr.r));
+
+  textureStore(phm, tex_coords, vec4(new_clr, 0.0, 0.0, 1.0));
+}
+
+@compute 
+@workgroup_size(32, 32, 1) 
+fn update_pheremone_heatmap(@builtin(global_invocation_id) id: vec3<u32>) {
+  let tcf: vec2<f32> = vec2<f32>(f32(id.x), f32(id.y)); 
+  var tex_uv: vec2<f32> = scale_tex_aspect(tcf);
+  
+  pheremone_deposition(tex_uv, id.xy);
+  pheremone_diffusion(id.xy);
+  pheremone_decay(id.xy);
 }
