@@ -7,7 +7,8 @@ use crate::{
         app_state::State,
         control_state::{print_gpu_data, KeyboardMode},
     },
-    PheremoneParams, Slime, SlimeParams, ViewParams, NUM_AGENTS, SCREEN_HEIGHT, SCREEN_WIDTH,
+    PheremoneParams, Slime, SlimeParams, ViewParams, DISPATCH_SIZE_X, DISPATCH_SIZE_Y, NUM_AGENTS,
+    SCREEN_HEIGHT, SCREEN_WIDTH,
 };
 
 pub(crate) fn update_view_params_buffer(state: &State) {
@@ -31,6 +32,7 @@ pub(crate) fn update_slime_params_buffer(state: &State) {
         max_velocity: state.params.slime_params.max_velocity,
         min_velocity: state.params.slime_params.min_velocity,
         turn_factor: state.params.slime_params.turn_factor,
+        avoid_factor: state.params.slime_params.avoid_factor,
         sensor_dist: state.params.slime_params.sensor_dist,
         sensor_offset: state.params.slime_params.sensor_offset,
         sensor_radius: state.params.slime_params.sensor_radius,
@@ -46,6 +48,7 @@ pub(crate) fn update_slime_params_buffer(state: &State) {
 pub(crate) fn update_pheremone_params_buffer(state: &State) {
     let new_pheremone_params = PheremoneParams {
         deposition_amount: state.params.pheremone_params.deposition_amount,
+        deposition_range: state.params.pheremone_params.deposition_range,
         diffusion_factor: state.params.pheremone_params.diffusion_factor,
         decay_factor: state.params.pheremone_params.decay_factor,
     };
@@ -108,7 +111,7 @@ pub(crate) fn update_agent_position(state: &State) {
         compute_pass.set_bind_group(0, &state.bind_groups.compute_bg, &[]);
         compute_pass.set_bind_group(1, &state.bind_groups.uniform_bg, &[]);
         compute_pass.set_bind_group(2, &state.bind_groups.phm_bg, &[]);
-        compute_pass.dispatch_workgroups(16, 16, 1); // Adjust workgroup size as needed
+        compute_pass.dispatch_workgroups(DISPATCH_SIZE_X, DISPATCH_SIZE_Y, 1); // Adjust workgroup size as needed
     }
 
     state.queue.submit(Some(encoder.finish()));
@@ -130,11 +133,7 @@ pub(crate) fn update_pheremone_trails(state: &State) {
         compute_pass.set_bind_group(0, &state.bind_groups.compute_bg, &[]);
         compute_pass.set_bind_group(1, &state.bind_groups.uniform_bg, &[]);
         compute_pass.set_bind_group(2, &state.bind_groups.phm_bg, &[]);
-
-        // Calculate the dispatch size based on the texture dimensions and workgroup size
-        let dispatch_size_x = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
-        let dispatch_size_y = ((SCREEN_HEIGHT as u32).saturating_add(28)) / 28;
-        compute_pass.dispatch_workgroups(dispatch_size_x, dispatch_size_y, 1); // Adjust workgroup size as needed
+        compute_pass.dispatch_workgroups(DISPATCH_SIZE_X, DISPATCH_SIZE_Y, 1); // Adjust workgroup size as needed
     }
 
     state.queue.submit(Some(encoder.finish()));
