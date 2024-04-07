@@ -1,6 +1,11 @@
 pub(crate) const NUM_AGENTS: usize = 256;
 pub(crate) const SCREEN_WIDTH: u32 = 1376;
 pub(crate) const SCREEN_HEIGHT: u32 = 768;
+pub(crate) const DISPATCH_SIZE_X: u32 = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
+pub(crate) const DISPATCH_SIZE_Y: u32 = ((SCREEN_HEIGHT as u32).saturating_add(32)) / 32;
+
+pub(crate) const TEXTURE_BUF_SIZE: usize =
+    SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize * 4 * (std::mem::size_of::<f32>());
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -122,6 +127,7 @@ pub(crate) struct SlimeParams {
     pub(crate) max_velocity: f32,
     pub(crate) min_velocity: f32,
     pub(crate) turn_factor: f32,
+    pub(crate) avoid_factor: f32,
     pub(crate) sensor_dist: f32,
     pub(crate) sensor_offset: f32,
     pub(crate) sensor_radius: f32,
@@ -131,6 +137,7 @@ pub(crate) struct SlimeParams {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct PheremoneParams {
     pub(crate) deposition_amount: f32,
+    pub(crate) deposition_range: f32,
     pub(crate) diffusion_factor: f32,
     pub(crate) decay_factor: f32,
 }
