@@ -147,7 +147,6 @@ impl<'a> State<'a> {
             compute_pass.set_pipeline(&self.pipelines.init_slime);
             compute_pass.set_bind_group(0, &self.bind_groups.compute_bg, &[]);
             compute_pass.set_bind_group(1, &self.bind_groups.uniform_bg, &[]);
-            compute_pass.set_bind_group(2, &self.bind_groups.phm_bg, &[]);
             compute_pass.dispatch_workgroups(16, 16, 1); // Adjust workgroup size as needed
         }
 
