@@ -16,7 +16,6 @@ struct Slime {
 @group(0) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
 @group(1) @binding(0) var<uniform> tu: TimeUniform;
-@group(2) @binding(0) var phm: texture_storage_2d<rgba32float, read_write>;
 
 struct RandomResult {
     state: vec4<u32>,
@@ -59,6 +58,10 @@ fn compute_slime_positions(@builtin(global_invocation_id) id: vec3<u32>) {
   var rvx: RandomResult = hybrid_taus(ry.state);
   var rvy: RandomResult = hybrid_taus(rvx.state);
   
-  agents[id.x].pos = vec2<f32>(rx.value, ry.value);
-  agents[id.x].vel = vec2<f32>(rvx.value, rvy.value) * 0.05;
+  // Range -0.5 -> 0.5
+  rvx.value -= 0.5;
+  rvy.value -= 0.5;
+
+  agents[id.x].pos = vec2<f32>(rx.value, ry.value) * 0.99;
+  agents[id.x].vel = vec2<f32>(rvx.value, rvy.value) * 0.0002;
 }
