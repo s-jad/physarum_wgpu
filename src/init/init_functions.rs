@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Offset, Params, PheremoneParams,
-    Pipelines, ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
+    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
+    ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
     SCREEN_HEIGHT, SCREEN_WIDTH, TEXTURE_BUF_SIZE, VERTICES,
 };
 
@@ -64,18 +64,18 @@ pub(crate) fn init_params() -> Params {
     let slime_params = SlimeParams {
         max_velocity: 0.0002,
         min_velocity: -0.0002,
-        turn_factor: 0.000001,
+        turn_factor: 0.00001,
         avoid_factor: 0.05,
-        sensor_dist: 0.05,
+        sensor_dist: 0.02,
         sensor_offset: 1.0472, // 60degrees in Radians
-        sensor_radius: 0.10,
+        sensor_radius: 0.01,
     };
 
     let pheremone_params = PheremoneParams {
-        deposition_amount: 1.0,
-        deposition_range: 0.003,
-        diffusion_factor: 0.2,
-        decay_factor: 0.05,
+        deposition_amount: 0.05,
+        deposition_range: 0.001,
+        diffusion_factor: 0.1,
+        decay_factor: 0.03,
     };
 
     Params {
