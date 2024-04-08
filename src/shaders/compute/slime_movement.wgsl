@@ -9,6 +9,7 @@ const SCREEN_HEIGHT: f32 = 768.0;
 const I_SCREEN_WIDTH: i32 = 1376;
 const I_SCREEN_HEIGHT: i32 = 768;
 const SCREEN_BUFFER: f32 = 0.001;
+const MIN_POSITIVE_F32: f32 = 0x1.0p-126f;
 
 struct Slime {
   pos: vec2<f32>,
@@ -28,6 +29,7 @@ struct SlimeParams {
 }
 struct PheremoneParams {
   deposition_amount: f32,
+  deposition_range: f32,
   diffusion_factor: f32,
   decay_factor: f32,
 }
@@ -41,6 +43,7 @@ struct ConstsUniform {
 
 @group(0) @binding(0) var<storage, read_write> agents: array<Slime>;
 @group(0) @binding(1) var<storage, read_write> sp: SlimeParams;
+@group(0) @binding(2) var<storage, read_write> pp: PheremoneParams;
 @group(0) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>, NUM_AGENTS>;
 @group(0) @binding(9) var<storage, read_write> debug: vec4<f32>;
 
@@ -121,20 +124,39 @@ fn clamp_coord(tex_coord: vec2<i32>, i: i32, j: i32) -> vec2<i32> {
   );
 }
 
-fn quiescence(agent: Slime, tex_coord: vec2<i32>) -> vec2<f32> {
+fn map_to_screen_coords(agent_pos: vec2<f32>) -> vec2<i32> {
+    // Convert normalized coordinates to screen coordinates
+    let screen_pos: vec2<f32> = agent_pos * vec2<f32>(SCREEN_WIDTH, SCREEN_HEIGHT);
+    
+    return vec2(i32(screen_pos.x), i32(screen_pos.y));
+}
+
+fn pheremone_deposition(agent_pos: vec2<f32>, moved_forward: f32) {
+  let agent_sc = map_to_screen_coords(agent_pos);
+  var texel = textureLoad(phm, agent_sc);
+  texel.r += pp.deposition_amount;
+  textureStore(phm, agent_sc, texel);
+}
+
+struct QuiescenceResult {
+  direction: vec2<f32>,
+  moved_forward: f32,
+}
+
+fn quiescence(agent: Slime) -> QuiescenceResult {
   var s1_total: f32 = 0.0;
   var s2_total: f32 = 0.0;
   var s3_total: f32 = 0.0;
 
   let s_radius = i32(sp.sensor_radius);
 
+  // Calculate the positions to sample
+  let s1_tex_coord = vec2<i32>(agent.s1_pos * vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+  let s2_tex_coord = vec2<i32>(agent.s2_pos * vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+  let s3_tex_coord = vec2<i32>(agent.s3_pos * vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
+
   for (var i: i32 = -s_radius; i <= s_radius; i++) {
     for (var j: i32 = -s_radius; j <= s_radius; j++) {
-        // Calculate the positions to sample
-      let s1_tex_coord = vec2<i32>(agent.s1_pos * vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
-      let s2_tex_coord = vec2<i32>(agent.s2_pos * vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
-      let s3_tex_coord = vec2<i32>(agent.s3_pos * vec2(SCREEN_WIDTH, SCREEN_HEIGHT));
-
       let s1_coord: vec2<i32> = clamp_coord(s1_tex_coord, i, j);
       let s2_coord: vec2<i32> = clamp_coord(s2_tex_coord, i, j);
       let s3_coord: vec2<i32> = clamp_coord(s3_tex_coord, i, j);
@@ -143,29 +165,38 @@ fn quiescence(agent: Slime, tex_coord: vec2<i32>) -> vec2<f32> {
       let s1_sample = textureLoad(phm, s1_coord);
       let s2_sample = textureLoad(phm, s2_coord);
       let s3_sample = textureLoad(phm, s3_coord);
-      
-      // Check if the sample is within the radius
-      let radius_sq = sp.sensor_radius*sp.sensor_radius;
 
+      // Add to totals
       s1_total += s1_sample.r;
       s2_total += s2_sample.r;
       s3_total += s3_sample.r;
+
+      // Try stop numbers exploding
+      s1_total *= 0.5;
+      s2_total *= 0.5;
+      s3_total *= 0.5;
     }
   }
 
   let max_total = max(max(s1_total, s2_total), s3_total);
-
-  var direction: vec2<f32>;
-
-  if max_total == s1_total {
-    direction = normalize(agent.s1_pos - agent.pos);
-  } else if max_total == s2_total {
-    direction = normalize(agent.s2_pos - agent.pos);
-  } else {
-    direction = normalize(agent.s3_pos - agent.pos);
-  }
+  debug = vec4(max_total, s1_total, s2_total, s3_total);
   
-  return direction * sp.turn_factor;
+  // Move in direction of highest pheremone concentration
+  // If max_total - sensor_total is less that MIN_POSITIVE_F32 
+  // That means its 0.0 and that sensor found the highest concentration
+  // move_* variables used to zero out direction_shift changes
+  let move_left = step(MIN_POSITIVE_F32, max_total - s1_total);
+  let move_forward = step(MIN_POSITIVE_F32, max_total - s2_total);
+  let move_right = step(MIN_POSITIVE_F32, max_total - s3_total);
+
+  let direction = move_left*(normalize(agent.s1_pos - agent.pos))
+    + move_forward*(normalize(agent.s2_pos - agent.pos))
+    + move_right*(normalize(agent.s3_pos - agent.pos));
+
+  return QuiescenceResult(
+    direction*sp.turn_factor,
+    move_forward,
+  );
 }
 
 @compute 
@@ -175,15 +206,18 @@ fn update_slime_positions(@builtin(global_invocation_id) id: vec3<u32>) {
   calculate_sensor_positions(agent, id.x);
   
   // Sense pheremones
-  let idi = vec2<i32>(i32(id.x), i32(id.y));
-  agent.vel += quiescence(agent, idi);
-  agents[id.x].vel += avoid_collisions(agents[id.x], id.x);
+  let qr = quiescence(agent);
+  agent.vel += qr.direction;
+  //agents[id.x].vel += avoid_collisions(agents[id.x], id.x);
 
   agent.vel = clamp_and_scale_velocity(agent);
 
   // Move
   agent.pos += agent.vel;
   agent.pos = respect_screen_edges(agent);
+
+  // Deposit Pheremones
+  pheremone_deposition(agent.pos, qr.moved_forward);
 
   agents[id.x] = agent;
 }
