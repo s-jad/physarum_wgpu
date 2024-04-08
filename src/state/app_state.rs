@@ -4,13 +4,13 @@ use crate::{
         init_textures,
     },
     updates::update_functions::{
-        update_agent_position, update_controls, update_cpu_read_buffers, update_pheremone_trails,
+        update_agent_position, update_cpu_read_buffers, update_pheremone_trails,
     },
     BindGroups, Buffers, Params, Pipelines, ShaderModules, Textures, VERTICES,
 };
 use std::sync::Arc;
 
-use super::control_state::{print_gpu_data, KeyboardState};
+use super::control_state::{print_gpu_data, update_controls, KeyboardState};
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
