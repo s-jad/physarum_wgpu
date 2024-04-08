@@ -59,15 +59,6 @@ fn scale_tex_aspect(fc: vec2<f32>) -> vec2<f32> {
   return uv;
 }
 
-fn pheremone_deposition(tex_uv: vec2<f32>, tex_coords: vec2<u32>) {
-  for (var i: u32 = 0u; i < NUM_AGENTS; i++) {
-    let dst: f32 = distance(agents[i].pos, tex_uv);
-
-    if (dst < pp.deposition_range) {
-      textureStore(phm, tex_coords, vec4(pp.deposition_amount, 0.0, 0.0, 1.0));
-    }
-  }
-}
 
 fn get_neighbour_coords(tex_coords: vec2<i32>, x: i32, y: i32) -> vec2<i32> {
   return vec2<i32>(
@@ -82,7 +73,7 @@ fn pheremone_diffusion(tex_coords: vec2<u32>) {
   let txc_int = vec2<i32>(i32(tex_coords.x), i32(tex_coords.y));
 
   // Define the range of neighboring pixels to consider
-  let range: i32 = 3; // Expensive
+  let range: i32 = 2; // Expensive
 
   let tex_color: vec4<f32> = textureLoad(phm, tex_coords);
 
@@ -119,7 +110,6 @@ fn update_pheremone_heatmap(@builtin(global_invocation_id) id: vec3<u32>) {
   let tcf: vec2<f32> = vec2<f32>(f32(id.x), f32(id.y)); 
   var tex_uv: vec2<f32> = scale_tex_aspect(tcf);
   
-  pheremone_deposition(tex_uv, id.xy);
   pheremone_diffusion(id.xy);
   pheremone_decay(id.xy);
 }
