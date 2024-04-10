@@ -40,7 +40,6 @@ pub(crate) fn update_slime_params_buffer(state: &State) {
 pub(crate) fn update_pheremone_params_buffer(state: &State) {
     let new_pheremone_params = PheremoneParams {
         deposition_amount: state.params.pheremone_params.deposition_amount,
-        deposition_range: state.params.pheremone_params.deposition_range,
         diffusion_factor: state.params.pheremone_params.diffusion_factor,
         decay_factor: state.params.pheremone_params.decay_factor,
     };
