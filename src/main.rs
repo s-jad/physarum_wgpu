@@ -24,8 +24,7 @@ fn main() {
 
     let mut state = futures::executor::block_on(State::new(window.into()));
 
-    state.init_slime();
-
+    println!("num agents: {NUM_AGENTS}");
     event_loop
         .run(move |event, elwt| match event {
             Event::WindowEvent { ref event, .. } => match event {
@@ -45,11 +44,11 @@ fn main() {
                         Ok(_) => {}
                         // Reconfigure the surface if lost
                         Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                        // The system is out of memory, we should probably quit
+                        // The system is out of memory, quit
                         Err(wgpu::SurfaceError::OutOfMemory) => {
                             elwt.exit();
                         }
-                        // All other errors (Outdated, Timeout) should be resolved by the next frame
+                        // All other errors (Outdated, Timeout) -> resolve by the next frame
                         Err(e) => eprintln!("{:?}", e),
                     };
 
