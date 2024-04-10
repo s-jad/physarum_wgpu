@@ -6,6 +6,13 @@ const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 
 // STRUCTS
+struct Debug {
+    d1: vec4<f32>,
+    d2: vec4<f32>,
+    d3: vec4<f32>,
+    d4: vec4<f32>,
+};
+
 struct VertexOutput {
     @builtin(position) frag_coord: vec4<f32>,
     @location(0) tex_coord: vec2<f32>,
@@ -42,7 +49,6 @@ struct SlimeParams {
 }
 struct PheremoneParams {
   deposition_amount: f32,
-  deposition_range: f32,
   diffusion_factor: f32,
   decay_factor: f32,
 }
@@ -59,7 +65,7 @@ var<storage, read_write> sp: SlimeParams;
 @group(0) @binding(2)
 var<storage, read_write> pp: PheremoneParams;
 @group(0) @binding(9)
-var<storage, read_write> debug: vec4<f32>;
+var<storage, read_write> debug: Debug;
 
 @group(1) @binding(0)
 var<uniform> tu: TimeUniform;
@@ -109,7 +115,6 @@ fn shash22(pos: vec2<f32>) -> vec2<f32> {
 @fragment
 fn main(in: VertexOutput) -> @location(0) vec4<f32> {
   let t: f32 = tu.time * vp.time_modifier;
-  debug = in.frag_coord;
   var uv: vec2<f32> = scale_aspect(in.frag_coord.xy); // Scale to 0.0 -> 1.0 + fix aspect ratio
   var uv0 = uv;
   uv.x += vp.x_shift * vp.zoom;
@@ -118,22 +123,23 @@ fn main(in: VertexOutput) -> @location(0) vec4<f32> {
   var color = vec3(0.0);
 // -----------------------------------------------------------------------------------------------
 
-  for (var i: u32 = 0u; i < NUM_AGENTS; i++) {
-    // Show Agents
-    let sd = distance(uv, agents[i].pos);
-    color += 1.0 - smoothstep(0.0, 0.003, sd);
-    
-    // Show Sensors
-    //let sd1 = distance(uv, agents[i].s1_pos);
-    //let sd2 = distance(uv, agents[i].s2_pos);
-    //let sd3 = distance(uv, agents[i].s3_pos);
-    //color += vec3<f32>(0.3, 0.0, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd1));
-    //color += vec3<f32>(0.0, 0.3, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd2));
-    //color += vec3<f32>(0.0, 0.0, 0.3) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd3));
-  }
+  //for (var i: u32 = 0u; i < NUM_AGENTS; i++) {
+  //  // Show Agents
+  //  let sd = distance(uv, agents[i].pos);
+  //  color += 1.0 - smoothstep(0.0, 0.003, sd);
+  //  
+  //  // Show Sensors
+  //  //let sd1 = distance(uv, agents[i].s1_pos);
+  //  //let sd2 = distance(uv, agents[i].s2_pos);
+  //  //let sd3 = distance(uv, agents[i].s3_pos);
+  //  //color += vec3<f32>(0.3, 0.0, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd1));
+  //  //color += vec3<f32>(0.0, 0.3, 0.0) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd2));
+  //  //color += vec3<f32>(0.0, 0.0, 0.3) * (1.0 - smoothstep(0.0, sp.sensor_radius*2.0, sd3));
+  //}
 
-  let tex_sample = textureSample(phm, phm_sampler, uv);
-  color += tex_sample.xyz;
+  var tex_sample = textureSample(phm, phm_sampler, uv);
+  tex_sample.r *= 0.9;
+  color += tex_sample.rgb;
   
 // -----------------------------------------------------------------------------------------------
   return vec4<f32>(color, 1.0);
