@@ -1,9 +1,10 @@
+use rand::Rng;
 use wgpu::util::DeviceExt;
 
 use crate::{
     vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
-    ShaderModules, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS, SCREEN_HEIGHT,
-    SCREEN_WIDTH, TEXTURE_BUF_SIZE, VERTICES,
+    ShaderModules, SlimeParams, Textures, TimeUniform, ViewParams, AGENT_TEX_HEIGHT,
+    AGENT_TEX_WIDTH, NUM_AGENTS, PHM_TEX_BUF_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
 };
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
@@ -20,12 +21,6 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
         ),
     };
     let f_shader = device.create_shader_module(fdesc);
-
-    let init_slime_desc = wgpu::ShaderModuleDescriptor {
-        label: Some("Initial Slime Position Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/compute/init_slime.wgsl").into()),
-    };
-    let init_slime_shader = device.create_shader_module(init_slime_desc);
 
     let update_slime_desc = wgpu::ShaderModuleDescriptor {
         label: Some("Update Slime Movement Shader"),
@@ -46,7 +41,6 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
     ShaderModules {
         v_shader,
         f_shader,
-        init_slime_shader,
         update_slime_shader,
         update_phm_shader,
     }
@@ -62,20 +56,19 @@ pub(crate) fn init_params() -> Params {
     };
 
     let slime_params = SlimeParams {
-        max_velocity: 0.0002,
-        min_velocity: -0.0002,
-        turn_factor: 0.00001,
-        avoid_factor: 0.05,
+        max_velocity: 0.0005,
+        min_velocity: -0.0005,
+        turn_factor: 0.001,
+        avoid_factor: 0.001,
         sensor_dist: 0.02,
         sensor_offset: 1.0472, // 60degrees in Radians
         sensor_radius: 0.01,
     };
 
     let pheremone_params = PheremoneParams {
-        deposition_amount: 0.05,
-        deposition_range: 0.001,
-        diffusion_factor: 0.1,
-        decay_factor: 0.03,
+        deposition_amount: 0.003,
+        diffusion_factor: 0.4,
+        decay_factor: 0.95,
     };
 
     Params {
@@ -155,7 +148,6 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
             label: Some("Pheremone Parameters Storage Buffer"),
             contents: bytemuck::cast_slice(&[
                 params.pheremone_params.deposition_amount,
-                params.pheremone_params.deposition_range,
                 params.pheremone_params.diffusion_factor,
                 params.pheremone_params.decay_factor,
             ]),
@@ -423,18 +415,12 @@ pub(crate) fn init_bind_groups(
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
                     view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
                 },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
         ],
@@ -455,10 +441,6 @@ pub(crate) fn init_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::TextureView(&textures.agent_tex_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::Sampler(&textures.agent_tex_sampler),
             },
         ],
         label: Some("sampled_texture_bg"),
@@ -524,62 +506,57 @@ pub(crate) fn init_pipelines(
         multiview: None,
     });
 
-    let compute_slime_initial_position_pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Compute Agent Pipeline Layout"),
-            bind_group_layouts: &[&bind_groups.compute_bgl, &bind_groups.uniform_bgl],
-            push_constant_ranges: &[],
-        });
-
-    let compute_slime_movement_pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Compute Agent Pipeline Layout"),
-            bind_group_layouts: &[
-                &bind_groups.compute_bgl,
-                &bind_groups.uniform_bgl,
-                &bind_groups.texture_bgl,
-            ],
-            push_constant_ranges: &[],
-        });
-
-    let init_slime_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("Slime Initial Position Pipeline"),
-        layout: Some(&compute_slime_initial_position_pipeline_layout),
-        module: &shader_modules.init_slime_shader,
-        entry_point: "compute_slime_positions",
+    let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Compute Agent Pipeline Layout"),
+        bind_group_layouts: &[
+            &bind_groups.compute_bgl,
+            &bind_groups.uniform_bgl,
+            &bind_groups.texture_bgl,
+        ],
+        push_constant_ranges: &[],
     });
 
     let update_slime_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("Update Slime Position Pipeline"),
-        layout: Some(&compute_slime_movement_pipeline_layout),
+        label: Some("Update Agent Position Pipeline"),
+        layout: Some(&compute_pipeline_layout),
         module: &shader_modules.update_slime_shader,
         entry_point: "update_slime_positions",
     });
 
-    let compute_phm_pipeline_layout =
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Compute PHM Pipeline Layout"),
-            bind_group_layouts: &[
-                &bind_groups.compute_bgl,
-                &bind_groups.uniform_bgl,
-                &bind_groups.texture_bgl,
-            ],
-            push_constant_ranges: &[],
-        });
-
     let update_phm_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("Update Pheremone HeatMap Pipeline"),
-        layout: Some(&compute_phm_pipeline_layout),
+        layout: Some(&compute_pipeline_layout),
         module: &shader_modules.update_phm_shader,
         entry_point: "update_pheremone_heatmap",
     });
 
     Pipelines {
         render: render_pipeline,
-        init_slime: init_slime_pipeline,
         update_slime: update_slime_pipeline,
         update_phm: update_phm_pipeline,
     }
+}
+
+fn init_agents_data(num_agents: usize) -> Vec<f32> {
+    let mut rng = rand::thread_rng();
+    let mut agents_data = Vec::with_capacity(num_agents * 4); // each agent has 4 params
+
+    for _ in 0..num_agents {
+        // Generate random position between 0 and 1
+        let pos_x = rng.gen_range(0.0..=1.0);
+        let pos_y = rng.gen_range(0.0..=1.0);
+
+        // Generate random velocity between -0.0002 and 0.0002
+        let vel_x = rng.gen_range(-0.0002..=0.0002);
+        let vel_y = rng.gen_range(-0.0002..=0.0002);
+
+        // Encode position and velocity into a vec4
+        let agent_data = [pos_x, pos_y, vel_x, vel_y];
+
+        agents_data.push(agent_data);
+    }
+
+    agents_data.into_iter().flatten().collect::<Vec<f32>>()
 }
 
 pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textures {
@@ -626,7 +603,7 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
             view_formats: &[wgpu::TextureFormat::Rgba32Float],
         },
         wgpu::util::TextureDataOrder::default(),
-        &[0; TEXTURE_BUF_SIZE],
+        &[0; PHM_TEX_BUF_SIZE],
     );
 
     let phm_tex_view = phm_tex.create_view(&phm_tex_view_desc);
@@ -651,10 +628,12 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
     };
 
     let agent_tex_extent = wgpu::Extent3d {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT,
+        width: AGENT_TEX_WIDTH as u32,
+        height: AGENT_TEX_HEIGHT as u32,
         depth_or_array_layers: 1,
     };
+
+    let init_agent_tex = init_agents_data(AGENT_TEX_WIDTH * AGENT_TEX_HEIGHT);
 
     let agent_tex = device.create_texture_with_data(
         queue,
@@ -671,10 +650,10 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
             view_formats: &[wgpu::TextureFormat::Rgba32Float],
         },
         wgpu::util::TextureDataOrder::default(),
-        &[0; TEXTURE_BUF_SIZE],
+        bytemuck::cast_slice(&init_agent_tex),
     );
 
-    let agent_tex_view = phm_tex.create_view(&phm_tex_view_desc);
+    let agent_tex_view = agent_tex.create_view(&agent_tex_view_desc);
 
     let agent_tex_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("Agent - Sampler"),
