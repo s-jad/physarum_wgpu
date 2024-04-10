@@ -1,9 +1,12 @@
-pub(crate) const NUM_AGENTS: usize = 256;
 pub(crate) const SCREEN_WIDTH: u32 = 1376;
 pub(crate) const SCREEN_HEIGHT: u32 = 768;
 pub(crate) const DISPATCH_SIZE_X: u32 = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
 pub(crate) const DISPATCH_SIZE_Y: u32 = ((SCREEN_HEIGHT as u32).saturating_add(32)) / 32;
-pub(crate) const TEXTURE_BUF_SIZE: usize =
+
+pub(crate) const AGENT_TEX_WIDTH: usize = 1024;
+pub(crate) const AGENT_TEX_HEIGHT: usize = 1024;
+pub(crate) const NUM_AGENTS: usize = AGENT_TEX_HEIGHT * AGENT_TEX_WIDTH;
+pub(crate) const PHM_TEX_BUF_SIZE: usize =
     SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize * 4 * (std::mem::size_of::<f32>());
 
 #[repr(C)]
@@ -79,7 +82,6 @@ pub(crate) struct BindGroups {
 pub(crate) struct ShaderModules {
     pub(crate) v_shader: wgpu::ShaderModule,
     pub(crate) f_shader: wgpu::ShaderModule,
-    pub(crate) init_slime_shader: wgpu::ShaderModule,
     pub(crate) update_slime_shader: wgpu::ShaderModule,
     pub(crate) update_phm_shader: wgpu::ShaderModule,
 }
@@ -87,7 +89,6 @@ pub(crate) struct ShaderModules {
 #[derive(Debug)]
 pub(crate) struct Pipelines {
     pub(crate) render: wgpu::RenderPipeline,
-    pub(crate) init_slime: wgpu::ComputePipeline,
     pub(crate) update_slime: wgpu::ComputePipeline,
     pub(crate) update_phm: wgpu::ComputePipeline,
 }
@@ -128,7 +129,6 @@ pub(crate) struct SlimeParams {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct PheremoneParams {
     pub(crate) deposition_amount: f32,
-    pub(crate) deposition_range: f32,
     pub(crate) diffusion_factor: f32,
     pub(crate) decay_factor: f32,
 }
