@@ -77,11 +77,15 @@ fn respect_screen_edges(agent: Slime) -> vec2<f32> {
   let miny = step(dp.y, MIN_SCREEN);
   let maxy = step(MAX_SCREEN, dp.y);
 
-  dp = minx*(MAX_SCREEN - 0.001)
-    + maxx*(MIN_SCREEN + 0.001)
-    + miny*(MAX_SCREEN - 0.001)
-    + maxy*(MIN_SCREEN + 0.001)
-    + dp*step((minx + maxx + miny + maxy), 0.1);
+  let dpx = minx*(MAX_SCREEN - SCREEN_BUFFER)
+    + maxx*(MIN_SCREEN + SCREEN_BUFFER);
+
+  let dpy = miny*(MAX_SCREEN - SCREEN_BUFFER)
+    + maxy*(MIN_SCREEN + SCREEN_BUFFER);
+
+  let no_change = step((minx + maxx + miny + maxy), MIN_POSITIVE_F32);
+
+  dp = vec2(dpx, dpy) + dp*no_change;
   
   return dp;
 }
@@ -170,11 +174,6 @@ fn quiescence(agent: Slime) -> QuiescenceResult {
       s1_total += s1_sample.r;
       s2_total += s2_sample.r;
       s3_total += s3_sample.r;
-
-      // Try stop numbers exploding
-      s1_total *= 0.5;
-      s2_total *= 0.5;
-      s3_total *= 0.5;
     }
   }
 
