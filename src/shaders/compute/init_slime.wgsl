@@ -1,5 +1,11 @@
 const NUM_AGENTS = 256u;
 
+struct Debug {
+  d1: vec4<f32>,
+  d2: vec4<f32>,
+  d3: vec4<f32>,
+  d4: vec4<f32>,
+}
 struct TimeUniform {
   time: f32,
 }
@@ -13,7 +19,7 @@ struct Slime {
 
 @group(0) @binding(0) var<storage, read_write> agents: array<Slime>;
 @group(0) @binding(8) var<storage, read_write> debug_array: array<vec4<f32>, NUM_AGENTS>;
-@group(0) @binding(9) var<storage, read_write> debug: vec4<f32>;
+@group(0) @binding(9) var<storage, read_write> debug: Debug;
 
 @group(1) @binding(0) var<uniform> tu: TimeUniform;
 
