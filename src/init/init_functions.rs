@@ -2,8 +2,8 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
-    ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
-    SCREEN_HEIGHT, SCREEN_WIDTH, TEXTURE_BUF_SIZE, VERTICES,
+    ShaderModules, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS, SCREEN_HEIGHT,
+    SCREEN_WIDTH, TEXTURE_BUF_SIZE, VERTICES,
 };
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
@@ -109,8 +109,8 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         &wgpu::util::BufferInitDescriptor {
             label: Some("Texture Extent Buffer"),
             contents: bytemuck::cast_slice(&[ConstUniforms {
-                phm_height: SCREEN_HEIGHT as f32,
-                phm_width: SCREEN_WIDTH as f32,
+                texture_height: SCREEN_HEIGHT as f32,
+                texture_width: SCREEN_WIDTH as f32,
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         },
@@ -164,22 +164,6 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
     );
 
     // STORAGE/CPU-READABLE BUFFER PAIRS
-    let slime_pos_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Slimes Positions Buffer"),
-        size: (std::mem::size_of::<[Slime; NUM_AGENTS]>()) as wgpu::BufferAddress,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let cpu_read_slime_pos_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("CPU Readable Buffer - Slimes"),
-        size: (std::mem::size_of::<[Slime; NUM_AGENTS]>()) as wgpu::BufferAddress,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-
     let generic_debug_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Debug Shaders Buffer"),
         size: (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
@@ -217,8 +201,6 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         time_uniform_buf,
         const_uniform_buf,
         view_params_buf,
-        slime_pos_buf,
-        cpu_read_slime_pos_buf,
         generic_debug_buf,
         cpu_read_generic_debug_buf,
         generic_debug_array_buf,
@@ -231,9 +213,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
 pub(crate) fn init_bind_groups(
     device: &wgpu::Device,
     buffers: &Buffers,
-    texture_view: &wgpu::TextureView,
-    phm_sampler: &wgpu::Sampler,
-    phm_extent: &wgpu::Extent3d,
+    textures: &Textures,
 ) -> BindGroups {
     let uniform_bgl =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -308,16 +288,6 @@ pub(crate) fn init_bind_groups(
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Slime>() as _),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -373,10 +343,6 @@ pub(crate) fn init_bind_groups(
         layout: &compute_bgl,
         entries: &[
             wgpu::BindGroupEntry {
-                binding: 0,
-                resource: buffers.slime_pos_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
                 binding: 1,
                 resource: buffers.slime_params_buf.as_entire_binding(),
             },
@@ -396,30 +362,48 @@ pub(crate) fn init_bind_groups(
         label: Some("compute_bind_group"),
     });
 
-    let phm_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::StorageTexture {
-                access: wgpu::StorageTextureAccess::ReadWrite,
-                format: wgpu::TextureFormat::Rgba32Float,
-                view_dimension: wgpu::TextureViewDimension::D2,
+    let texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
             },
-            count: None,
-        }],
-        label: Some("phm_bgl"),
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::ReadWrite,
+                    format: wgpu::TextureFormat::Rgba32Float,
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
+            },
+        ],
+        label: Some("texture_bgl"),
     });
 
-    let phm_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &phm_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&texture_view),
-        }],
-        label: Some("phm_bg"),
+    let texture_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &texture_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&textures.phm_tex_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&textures.agent_tex_view),
+            },
+        ],
+        label: Some("texture_bg"),
     });
 
-    let sampled_phm_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+    let sampled_texture_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         entries: &[
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
@@ -437,20 +421,44 @@ pub(crate) fn init_bind_groups(
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
         ],
-        label: Some("sampled_phm_bgl"),
+        label: Some("sampled_texture_bgl"),
     });
 
-    let sampled_phm_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &sampled_phm_bgl,
+    let sampled_texture_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &sampled_texture_bgl,
         entries: &[
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
+                resource: wgpu::BindingResource::TextureView(&textures.phm_tex_view),
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: wgpu::BindingResource::Sampler(phm_sampler),
+                resource: wgpu::BindingResource::Sampler(&textures.phm_tex_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::TextureView(&textures.agent_tex_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::Sampler(&textures.agent_tex_sampler),
             },
         ],
         label: Some("sampled_texture_bg"),
@@ -463,10 +471,10 @@ pub(crate) fn init_bind_groups(
         param_bgl,
         compute_bg,
         compute_bgl,
-        phm_bg,
-        phm_bgl,
-        sampled_phm_bg,
-        sampled_phm_bgl,
+        texture_bg,
+        texture_bgl,
+        sampled_texture_bg,
+        sampled_texture_bgl,
     }
 }
 
@@ -481,7 +489,7 @@ pub(crate) fn init_pipelines(
             &bind_groups.compute_bgl,
             &bind_groups.uniform_bgl,
             &bind_groups.param_bgl,
-            &bind_groups.sampled_phm_bgl,
+            &bind_groups.sampled_texture_bgl,
         ],
         push_constant_ranges: &[],
     });
@@ -529,7 +537,7 @@ pub(crate) fn init_pipelines(
             bind_group_layouts: &[
                 &bind_groups.compute_bgl,
                 &bind_groups.uniform_bgl,
-                &bind_groups.phm_bgl,
+                &bind_groups.texture_bgl,
             ],
             push_constant_ranges: &[],
         });
@@ -554,7 +562,7 @@ pub(crate) fn init_pipelines(
             bind_group_layouts: &[
                 &bind_groups.compute_bgl,
                 &bind_groups.uniform_bgl,
-                &bind_groups.phm_bgl,
+                &bind_groups.texture_bgl,
             ],
             push_constant_ranges: &[],
         });
@@ -586,8 +594,8 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
 
     // const TEXTURE_SIZE: usize = texture_size;
 
-    let phm_texture_view_desc = wgpu::TextureViewDescriptor {
-        label: Some("Phermone Heatmap Texture View"),
+    let phm_tex_view_desc = wgpu::TextureViewDescriptor {
+        label: Some("Phermone - View Descriptor"),
         format: Some(wgpu::TextureFormat::Rgba32Float),
         dimension: Some(wgpu::TextureViewDimension::D2),
         aspect: wgpu::TextureAspect::All,
@@ -597,17 +605,17 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         array_layer_count: None,
     };
 
-    let phm_extent = wgpu::Extent3d {
+    let phm_tex_extent = wgpu::Extent3d {
         width: SCREEN_WIDTH,
         height: SCREEN_HEIGHT,
         depth_or_array_layers: 1,
     };
 
-    let phm = device.create_texture_with_data(
+    let phm_tex = device.create_texture_with_data(
         queue,
         &wgpu::TextureDescriptor {
-            label: Some("Read-Write Storage Texture"),
-            size: phm_extent,
+            label: Some("Pheremone - Read-Write Storage Texture"),
+            size: phm_tex_extent,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -621,10 +629,55 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
         &[0; TEXTURE_BUF_SIZE],
     );
 
-    let phm_view = phm.create_view(&phm_texture_view_desc);
+    let phm_tex_view = phm_tex.create_view(&phm_tex_view_desc);
 
-    let phm_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("Pheremone Heat Map Sampler"),
+    let phm_tex_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Pheremone - Sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+
+    let agent_tex_view_desc = wgpu::TextureViewDescriptor {
+        label: Some("Agent - Texture View Descriptor"),
+        format: Some(wgpu::TextureFormat::Rgba32Float),
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        aspect: wgpu::TextureAspect::All,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: None,
+    };
+
+    let agent_tex_extent = wgpu::Extent3d {
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT,
+        depth_or_array_layers: 1,
+    };
+
+    let agent_tex = device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Agent - Read-Write Storage Texture"),
+            size: agent_tex_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::STORAGE_BINDING
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[wgpu::TextureFormat::Rgba32Float],
+        },
+        wgpu::util::TextureDataOrder::default(),
+        &[0; TEXTURE_BUF_SIZE],
+    );
+
+    let agent_tex_view = phm_tex.create_view(&phm_tex_view_desc);
+
+    let agent_tex_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("Agent - Sampler"),
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::FilterMode::Linear,
@@ -632,9 +685,13 @@ pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textu
     });
 
     Textures {
-        phm,
-        phm_sampler,
-        phm_view,
-        phm_extent,
+        phm_tex,
+        phm_tex_sampler,
+        phm_tex_view,
+        phm_tex_extent,
+        agent_tex,
+        agent_tex_sampler,
+        agent_tex_view,
+        agent_tex_extent,
     }
 }
