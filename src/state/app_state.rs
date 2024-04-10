@@ -6,7 +6,8 @@ use crate::{
     updates::update_functions::{
         update_agent_position, update_cpu_read_buffers, update_pheremone_trails,
     },
-    BindGroups, Buffers, Params, Pipelines, ShaderModules, Textures, VERTICES,
+    BindGroups, Buffers, Params, Pipelines, ShaderModules, Textures, DISPATCH_SIZE_X,
+    DISPATCH_SIZE_Y, VERTICES,
 };
 use std::sync::Arc;
 
@@ -123,27 +124,6 @@ impl<'a> State<'a> {
             // and declared after it
             window,
         }
-    }
-
-    pub(crate) fn init_slime(&mut self) {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Init Slime Encoder"),
-            });
-
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Init Slime Compute Pass"),
-                timestamp_writes: None,
-            });
-            compute_pass.set_pipeline(&self.pipelines.init_slime);
-            compute_pass.set_bind_group(0, &self.bind_groups.compute_bg, &[]);
-            compute_pass.set_bind_group(1, &self.bind_groups.uniform_bg, &[]);
-            compute_pass.dispatch_workgroups(16, 16, 1); // Adjust workgroup size as needed
-        }
-
-        self.queue.submit(Some(encoder.finish()));
     }
 
     pub(crate) fn update(&mut self) {
