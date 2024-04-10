@@ -99,17 +99,10 @@ impl<'a> State<'a> {
         let params = init_params();
         let buffers = init_buffers(&device, &params);
         let textures = init_textures(&device, &queue);
-        let bind_groups = init_bind_groups(
-            &device,
-            &buffers,
-            &textures.phm_view,
-            &textures.phm_sampler,
-            &textures.phm_extent,
-        );
+        let bind_groups = init_bind_groups(&device, &buffers, &textures);
         let pipelines = init_pipelines(&device, &bind_groups, &shader_modules);
         let controls = KeyboardState::new();
 
-        println!("adadpter.limts: {:#?}", adapter.limits());
         Self {
             instance,
             adapter,
@@ -191,7 +184,7 @@ impl<'a> State<'a> {
             render_pass.set_bind_group(0, &self.bind_groups.compute_bg, &[]);
             render_pass.set_bind_group(1, &self.bind_groups.uniform_bg, &[]);
             render_pass.set_bind_group(2, &self.bind_groups.param_bg, &[]);
-            render_pass.set_bind_group(3, &self.bind_groups.sampled_phm_bg, &[]);
+            render_pass.set_bind_group(3, &self.bind_groups.sampled_texture_bg, &[]);
             render_pass.set_vertex_buffer(0, self.buffers.vertex_buf.slice(..));
 
             let vertex_range = 0..VERTICES.len() as u32;

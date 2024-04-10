@@ -3,7 +3,6 @@ pub(crate) const SCREEN_WIDTH: u32 = 1376;
 pub(crate) const SCREEN_HEIGHT: u32 = 768;
 pub(crate) const DISPATCH_SIZE_X: u32 = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
 pub(crate) const DISPATCH_SIZE_Y: u32 = ((SCREEN_HEIGHT as u32).saturating_add(32)) / 32;
-
 pub(crate) const TEXTURE_BUF_SIZE: usize =
     SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize * 4 * (std::mem::size_of::<f32>());
 
@@ -45,8 +44,8 @@ pub(crate) struct TimeUniform {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct ConstUniforms {
-    pub(crate) phm_height: f32,
-    pub(crate) phm_width: f32,
+    pub(crate) texture_height: f32,
+    pub(crate) texture_width: f32,
 }
 
 #[derive(Debug)]
@@ -55,8 +54,6 @@ pub(crate) struct Buffers {
     pub(crate) time_uniform_buf: wgpu::Buffer,
     pub(crate) const_uniform_buf: wgpu::Buffer,
     pub(crate) view_params_buf: wgpu::Buffer,
-    pub(crate) slime_pos_buf: wgpu::Buffer,
-    pub(crate) cpu_read_slime_pos_buf: wgpu::Buffer,
     pub(crate) generic_debug_buf: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug_buf: wgpu::Buffer,
     pub(crate) generic_debug_array_buf: wgpu::Buffer,
@@ -72,10 +69,10 @@ pub(crate) struct BindGroups {
     pub(crate) param_bgl: wgpu::BindGroupLayout,
     pub(crate) compute_bg: wgpu::BindGroup,
     pub(crate) compute_bgl: wgpu::BindGroupLayout,
-    pub(crate) phm_bg: wgpu::BindGroup,
-    pub(crate) phm_bgl: wgpu::BindGroupLayout,
-    pub(crate) sampled_phm_bg: wgpu::BindGroup,
-    pub(crate) sampled_phm_bgl: wgpu::BindGroupLayout,
+    pub(crate) texture_bg: wgpu::BindGroup,
+    pub(crate) texture_bgl: wgpu::BindGroupLayout,
+    pub(crate) sampled_texture_bg: wgpu::BindGroup,
+    pub(crate) sampled_texture_bgl: wgpu::BindGroupLayout,
 }
 
 #[derive(Debug)]
@@ -97,20 +94,14 @@ pub(crate) struct Pipelines {
 
 #[derive(Debug)]
 pub(crate) struct Textures {
-    pub(crate) phm: wgpu::Texture,
-    pub(crate) phm_sampler: wgpu::Sampler,
-    pub(crate) phm_view: wgpu::TextureView,
-    pub(crate) phm_extent: wgpu::Extent3d,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct Slime {
-    pub(crate) pos: [f32; 2],
-    pub(crate) vel: [f32; 2],
-    pub(crate) s1_pos: [f32; 2],
-    pub(crate) s2_pos: [f32; 2],
-    pub(crate) s3_pos: [f32; 2],
+    pub(crate) phm_tex: wgpu::Texture,
+    pub(crate) phm_tex_sampler: wgpu::Sampler,
+    pub(crate) phm_tex_view: wgpu::TextureView,
+    pub(crate) phm_tex_extent: wgpu::Extent3d,
+    pub(crate) agent_tex: wgpu::Texture,
+    pub(crate) agent_tex_sampler: wgpu::Sampler,
+    pub(crate) agent_tex_view: wgpu::TextureView,
+    pub(crate) agent_tex_extent: wgpu::Extent3d,
 }
 
 // PARAMETERS
