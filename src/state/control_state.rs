@@ -102,7 +102,7 @@ pub(crate) fn print_gpu_data<T: bytemuck::Pod + std::fmt::Debug>(
 }
 
 pub(crate) fn update_controls(state: &mut State) {
-    if state.controls.key_pressed(PhysicalKey::Code(KeyCode::KeyD)) {
+    if state.controls.key_pressed(PhysicalKey::Code(KeyCode::KeyP)) {
         state.controls.set_mode(KeyboardMode::DEBUG);
     } else if state
         .controls
@@ -150,7 +150,7 @@ fn debug_controls(state: &mut State) {
         print_gpu_data::<[[f32; 4]; NUM_AGENTS]>(
             &state.device,
             &state.buffers.cpu_read_generic_debug_array_buf,
-            "Debug",
+            "Debug Array",
         );
         thread::sleep(time::Duration::from_millis(50));
         state.controls.set_mode(KeyboardMode::VIEW);
@@ -215,15 +215,11 @@ fn pheremone_controls(state: &mut State) {
 
     if pressed.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
         let maxv = &mut state.params.pheremone_params.deposition_amount;
-        *maxv = f32::max(0.1, *maxv + (0.003 * dval));
-        update_pheremone_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyR)) {
-        let minv = &mut state.params.pheremone_params.deposition_range;
-        *minv = f32::max(0.0, *minv + (0.003 * dval));
+        *maxv = f32::max(0.0, *maxv + (0.003 * dval));
         update_pheremone_params_buffer(state);
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         let minv = &mut state.params.pheremone_params.diffusion_factor;
-        *minv = f32::max(0.0, *minv + (0.003 * dval));
+        *minv = f32::max(0.0, *minv + (0.03 * dval));
         update_pheremone_params_buffer(state);
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyD)) {
         let tf = &mut state.params.pheremone_params.decay_factor;
@@ -287,7 +283,7 @@ fn print_controls(state: &State) {
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         println!("\nslime_params:\n{:#?}", state.params.slime_params);
         thread::sleep(time::Duration::from_millis(50));
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
+    } else if pressed.contains(&PhysicalKey::Code(KeyCode::Period)) {
         println!("\npheremone_params:\n{:#?}", state.params.pheremone_params);
         thread::sleep(time::Duration::from_millis(50));
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::Comma)) {
