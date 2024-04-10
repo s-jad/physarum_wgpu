@@ -3,8 +3,13 @@ const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const I_SCREEN_WIDTH: i32 = 1376;
 const I_SCREEN_HEIGHT: i32 = 768;
-const DEPOSITION_RANGE: f32 = 0.005;
 
+struct Debug {
+    d1: vec4<f32>,
+    d2: vec4<f32>,
+    d3: vec4<f32>,
+    d4: vec4<f32>,
+};
 struct TimeUniform {
   time: f32,
 }
@@ -33,7 +38,6 @@ struct SlimeParams {
 }
 struct PheremoneParams {
   deposition_amount: f32,
-  deposition_range: f32,
   diffusion_factor: f32,
   decay_factor: f32,
 }
@@ -43,7 +47,8 @@ struct PheremoneParams {
 @group(0) @binding(1) var<storage, read_write> sp: SlimeParams;
 @group(0) @binding(2) var<storage, read_write> pp: PheremoneParams;
 @group(0) @binding(8) var<storage, read_write> debug_arr: array<vec4<f32>>;
-@group(0) @binding(9) var<storage, read_write> debug: vec4<f32>;
+@group(0) @binding(9)
+var<storage, read_write> debug: Debug;
 
 @group(1) @binding(0) var<uniform> tu: TimeUniform;
 @group(1) @binding(1) var<uniform> cu: ConstsUniform;
@@ -73,7 +78,7 @@ fn pheremone_diffusion(tex_coords: vec2<u32>) {
   let txc_int = vec2<i32>(i32(tex_coords.x), i32(tex_coords.y));
 
   // Define the range of neighboring pixels to consider
-  let range: i32 = 2; // Expensive
+  let range: i32 = 3; // Expensive
 
   let tex_color: vec4<f32> = textureLoad(phm, tex_coords);
 
@@ -90,16 +95,14 @@ fn pheremone_diffusion(tex_coords: vec2<u32>) {
     }
   }
     
-  // Calculate the average red intensity, considering the weights
   let avg_intensity: f32 = total_intensity / total_weight;
-  let debug_idx = min(256u, tex_coords.x);
 
   textureStore(phm, tex_coords, vec4(max(tex_color.r, avg_intensity), 0.0, 0.0, 1.0));
 }
 
 fn pheremone_decay(tex_coords: vec2<u32>) {
   let current_clr: vec4<f32> = textureLoad(phm, tex_coords);
-  let new_clr = max(0.0, current_clr.r - (pp.decay_factor*current_clr.r));
+  let new_clr: f32 = max(0.0, current_clr.r*pp.decay_factor);
 
   textureStore(phm, tex_coords, vec4(new_clr, 0.0, 0.0, 1.0));
 }
