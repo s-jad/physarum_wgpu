@@ -37,6 +37,15 @@ pub(crate) const VERTICES: &[Vertex; 6] = &[
 ];
 
 #[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct DebugBuffer {
+    pub(crate) d1: [f32; 4],
+    pub(crate) d2: [f32; 4],
+    pub(crate) d3: [f32; 4],
+    pub(crate) d4: [f32; 4],
+}
+
+#[repr(C)]
 #[derive(Copy, Clone)]
 pub(crate) struct TimeUniform {
     pub(crate) time: f32,
@@ -64,6 +73,7 @@ pub(crate) struct Buffers {
     pub(crate) slime_params_buf: wgpu::Buffer,
     pub(crate) pheremone_params_buf: wgpu::Buffer,
 }
+
 #[derive(Debug)]
 pub(crate) struct BindGroups {
     pub(crate) uniform_bg: wgpu::BindGroup,
@@ -137,7 +147,6 @@ pub(crate) struct SlimeParams {
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct PheremoneParams {
     pub(crate) deposition_amount: f32,
-    pub(crate) deposition_range: f32,
     pub(crate) diffusion_factor: f32,
     pub(crate) decay_factor: f32,
 }
