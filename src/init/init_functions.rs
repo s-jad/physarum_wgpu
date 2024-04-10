@@ -1,8 +1,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::{
-    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
-    ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
+    vertices_as_bytes, BindGroups, Buffers, ConstUniforms, DebugBuffer, Params, PheremoneParams,
+    Pipelines, ShaderModules, Slime, SlimeParams, Textures, TimeUniform, ViewParams, NUM_AGENTS,
     SCREEN_HEIGHT, SCREEN_WIDTH, TEXTURE_BUF_SIZE, VERTICES,
 };
 
@@ -64,18 +64,17 @@ pub(crate) fn init_params() -> Params {
     let slime_params = SlimeParams {
         max_velocity: 0.0002,
         min_velocity: -0.0002,
-        turn_factor: 0.00001,
+        turn_factor: 9e-7f32,
         avoid_factor: 0.05,
-        sensor_dist: 0.02,
+        sensor_dist: 0.015,
         sensor_offset: 1.0472, // 60degrees in Radians
         sensor_radius: 0.01,
     };
 
     let pheremone_params = PheremoneParams {
-        deposition_amount: 0.05,
-        deposition_range: 0.001,
-        diffusion_factor: 0.1,
-        decay_factor: 0.03,
+        deposition_amount: 0.03,
+        diffusion_factor: 0.3,
+        decay_factor: 0.985,
     };
 
     Params {
@@ -155,7 +154,6 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
             label: Some("Pheremone Parameters Storage Buffer"),
             contents: bytemuck::cast_slice(&[
                 params.pheremone_params.deposition_amount,
-                params.pheremone_params.deposition_range,
                 params.pheremone_params.diffusion_factor,
                 params.pheremone_params.decay_factor,
             ]),
@@ -182,7 +180,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
 
     let generic_debug_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Debug Shaders Buffer"),
-        size: (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
+        size: (std::mem::size_of::<DebugBuffer>()) as wgpu::BufferAddress,
         usage: wgpu::BufferUsages::STORAGE
             | wgpu::BufferUsages::COPY_SRC
             | wgpu::BufferUsages::COPY_DST,
@@ -191,7 +189,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
 
     let cpu_read_generic_debug_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("CPU Readable Buffer - Debug Shaders"),
-        size: (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
+        size: (std::mem::size_of::<DebugBuffer>()) as wgpu::BufferAddress,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -360,7 +358,7 @@ pub(crate) fn init_bind_groups(
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(
-                            std::mem::size_of::<[f32; 4]>() as _
+                            std::mem::size_of::<DebugBuffer>() as _
                         ),
                     },
                     count: None,
