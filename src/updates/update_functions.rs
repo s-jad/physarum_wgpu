@@ -28,6 +28,7 @@ pub(crate) fn update_slime_params_buffer(state: &State) {
         sensor_dist: state.params.slime_params.sensor_dist,
         sensor_offset: state.params.slime_params.sensor_offset,
         sensor_radius: state.params.slime_params.sensor_radius,
+        brownian_offset: state.params.slime_params.brownian_offset,
     };
 
     state.queue.write_buffer(
@@ -91,6 +92,27 @@ pub(crate) fn update_pheremone_trails(state: &State) {
         compute_pass.set_bind_group(1, &state.bind_groups.uniform_bg, &[]);
         compute_pass.set_bind_group(2, &state.bind_groups.texture_bg, &[]);
         compute_pass.dispatch_workgroups(DISPATCH_SIZE_X, DISPATCH_SIZE_Y, 1); // Adjust workgroup size as needed
+    }
+
+    state.queue.submit(Some(encoder.finish()));
+}
+
+pub(crate) fn update_food(state: &State) {
+    println!("updating food!!");
+    let mut encoder = state
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("update_food encoder"),
+        });
+
+    {
+        let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("Food Drop Compute Pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&state.pipelines.update_food);
+        compute_pass.set_bind_group(0, &state.bind_groups.food_bg, &[]);
+        compute_pass.dispatch_workgroups(2, 2, 1); // Adjust workgroup size as needed
     }
 
     state.queue.submit(Some(encoder.finish()));
