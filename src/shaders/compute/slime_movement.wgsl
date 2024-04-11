@@ -26,6 +26,7 @@ struct SlimeParams {
   sensor_dist: f32,
   sensor_offset: f32,
   sensor_radius: f32,
+  brownian_offset: f32,
 }
 struct PheremoneParams {
   deposition_amount: f32,
@@ -39,22 +40,6 @@ struct ConstsUniform {
   phm_height: f32,
   phm_width: f32,
 }
-
-// fn avoid_collisions(agent: Slime, agent_id: u32) -> vec2<f32> {
-//   var dv: vec2<f32> = vec2(0.0);
-//   let int_agent_id = i32(agent_id);
-// 
-//   for (var i: i32 = 0; i < INT_NUM_AGENTS; i++) {
-//     let dist: f32 = distance(agent.pos, agents[i].pos);
-//     let rnd: f32 = 2.0 * sin((tu.time * 0.1) + dot(agent.vel, agents[i].vel)) - 1.0;
-//     let in_range: f32 = step(dist, sp.avoid_factor);
-//     let not_self: f32 = step(0.0, f32(abs(int_agent_id - i)));
-//      
-//     dv += rnd*sp.turn_factor*in_range*not_self;
-//   }
-// 
-//   return dv;
-// }
 
 fn respect_screen_edges(agent_pos: vec2<f32>) -> vec2<f32> {
   var dp = agent_pos;
@@ -127,31 +112,43 @@ fn clamp_coord(tex_coord: vec2<i32>, i: i32, j: i32) -> vec2<i32> {
 }
 
 fn map_to_screen_coords(agent_pos: vec2<f32>) -> vec2<i32> {
-    // Convert normalized coordinates to screen coordinates
     let screen_pos: vec2<f32> = agent_pos * vec2<f32>(SCREEN_WIDTH, SCREEN_HEIGHT);
     
     return vec2(i32(screen_pos.x), i32(screen_pos.y));
 }
 
-fn pheremone_deposition(agent_pos: vec2<f32>, moved_forward: f32) {
+fn pheremone_deposition(agent_pos: vec2<f32>, moved_forward: f32, food_eaten: f32) {
   let agent_sc = map_to_screen_coords(agent_pos);
-  debug = vec4(agent_pos, f32(agent_sc.x), f32(agent_sc.y));
   var texel = textureLoad(phm, agent_sc);
-  texel.r += pp.deposition_amount;
+  texel.r += pp.deposition_amount + food_eaten*0.01;
   textureStore(phm, agent_sc, texel);
+}
+
+fn pcg2d(p: vec2<u32>) -> vec2<f32> {
+    var v = p * 1664525u + 1013904223u;
+    v.x += v.y * 1664525u; v.y += v.x * 1664525u;
+    v ^= v >> vec2<u32>(16u);
+    v.x += v.y * 1664525u; v.y += v.x * 1664525u;
+    return vec2(f32(v.x), f32(v.y));
+}
+
+fn rand22(n: vec2<f32>) -> vec2<f32> {
+    let hashed = pcg2d(vec2(u32(n.x), u32(n.y)));
+    return vec2<f32>(hashed) / vec2<f32>(0xffffffff);
 }
 
 struct QuiescenceResult {
   direction: vec2<f32>,
   moved_forward: f32,
+  food: f32,
 }
 
-fn quiescence(agent: vec4<f32>) -> QuiescenceResult {
-  var s1_total: f32 = 0.0;
-  var s2_total: f32 = 0.0;
-  var s3_total: f32 = 0.0;
+fn quiescence(agent: vec4<f32>, id: vec2<f32>) -> QuiescenceResult {
+  var s1_total: vec4<f32> = vec4(0.0);
+  var s2_total: vec4<f32> = vec4(0.0);
+  var s3_total: vec4<f32> = vec4(0.0);
 
-  let s_radius = i32(sp.sensor_radius);
+  let s_radius = 3;
   
   let sensors = calculate_sensor_positions(agent);
   
@@ -162,6 +159,7 @@ fn quiescence(agent: vec4<f32>) -> QuiescenceResult {
 
   for (var i: i32 = -s_radius; i <= s_radius; i++) {
     for (var j: i32 = -s_radius; j <= s_radius; j++) {
+      // Get neighbouring coords within sensor radius
       let s1_coord: vec2<i32> = clamp_coord(s1_tex_coord, i, j);
       let s2_coord: vec2<i32> = clamp_coord(s2_tex_coord, i, j);
       let s3_coord: vec2<i32> = clamp_coord(s3_tex_coord, i, j);
@@ -172,29 +170,61 @@ fn quiescence(agent: vec4<f32>) -> QuiescenceResult {
       let s3_sample = textureLoad(phm, s3_coord);
 
       // Add to totals
-      s1_total += s1_sample.r;
-      s2_total += s2_sample.r;
-      s3_total += s3_sample.r;
+      s1_total += s1_sample;
+      s2_total += s2_sample;
+      s3_total += s3_sample;
     }
   }
-
-  let max_total = max(max(s1_total, s2_total), s3_total);
   
-  // Move in direction of highest pheremone concentration
-  // If max_total - sensor_total is less that MIN_POSITIVE_F32 
-  // That means its 0.0 and that sensor found the highest concentration
-  // move_* variables used to zero out velocity changes from lower scoring sensors
-  let move_right = step(MIN_POSITIVE_F32, max_total - s1_total);
-  let move_forward = step(MIN_POSITIVE_F32, max_total - s2_total);
-  let move_left = step(MIN_POSITIVE_F32, max_total - s3_total);
+  // Find:
+  // -- max pheremone value -> RED 
+  // -- max waste value -> GREEN
+  // -- max food value -> BLUE
+  let max_pheremones = max(max(s1_total.r, s2_total.r), s3_total.r);
+  let max_waste = max(max(s1_total.g, s2_total.g), s3_total.g);
+  let max_food = max(max(s1_total.b, s2_total.b), s3_total.b);
 
-  let direction = move_left*(normalize(sensors.s1_pos - agent.xy))
-    + move_forward*(normalize(sensors.s2_pos - agent.xy))
-    + move_right*(normalize(sensors.s3_pos - agent.xy));
+  let s1_max: f32 = step(max_pheremones - s1_total.r, MIN_POSITIVE_F32);
+  let s2_max: f32 = step(max_pheremones - s2_total.r, MIN_POSITIVE_F32);
+  let s3_max: f32 = step(max_pheremones - s3_total.r, MIN_POSITIVE_F32);
+
+  let w1_max: f32 = step(max_waste - s1_total.g, MIN_POSITIVE_F32);
+  let w2_max: f32 = step(max_waste - s2_total.g, MIN_POSITIVE_F32);
+  let w3_max: f32 = step(max_waste - s3_total.g, MIN_POSITIVE_F32);
+
+  let f1_max: f32 = step(max_food - s1_total.b, MIN_POSITIVE_F32);
+  let f2_max: f32 = step(max_food - s2_total.b, MIN_POSITIVE_F32);
+  let f3_max: f32 = step(max_food - s3_total.b, MIN_POSITIVE_F32);
+  let food: f32 = step(MIN_POSITIVE_F32, s1_total.b + s2_total.b + s3_total.b);
+  
+  let s1_dir: vec2<f32> = normalize(sensors.s1_pos - agent.xy);
+  let s2_dir: vec2<f32> = normalize(sensors.s2_pos - agent.xy);
+  let s3_dir: vec2<f32> = normalize(sensors.s3_pos - agent.xy);
+  
+  var direction: vec2<f32> = (
+    s1_max*s1_dir
+    + s2_max*s2_dir
+    + s3_max*s3_dir
+  )*sp.turn_factor;
+  
+  direction += (
+    w1_max*s1_dir
+    + w2_max*s2_dir
+    + w3_max*s3_dir
+  )*sp.avoid_factor;
+
+  direction += food*(
+    f1_max*s1_dir
+    + f2_max*s2_dir
+    + f3_max*s3_dir
+  )*sp.turn_factor*10.0;
+  
+  direction += rand22(direction)*sp.brownian_offset;
 
   return QuiescenceResult(
-    direction*sp.turn_factor,
-    move_forward,
+    direction,
+    s2_max,
+    food,
   );
 }
 
@@ -206,18 +236,16 @@ fn update_slime_positions(@builtin(global_invocation_id) id: vec3<u32>) {
   var agent_vel = agent.zw;
 
   // Sense pheremones
-  let qr = quiescence(agent);
+  let qr = quiescence(agent, vec2(f32(id.x), f32(id.y)));
   agent_vel += qr.direction;
-  //agents[id.x].vel += avoid_collisions(agents[id.x], id.x);
-
-  agent_vel = clamp_and_scale_velocity(agent_vel);
 
   // Move
+  agent_vel = clamp_and_scale_velocity(agent_vel);
   agent_pos += agent_vel;
   agent_pos = respect_screen_edges(agent_pos);
 
   // Deposit Pheremones
-  pheremone_deposition(agent_pos, 1.0); // qr.moved_forward);
+  pheremone_deposition(agent_pos, qr.moved_forward, qr.food);
 
   textureStore(agents, id.xy, vec4<f32>(agent_pos, agent_vel));
 }
