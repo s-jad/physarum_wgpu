@@ -38,11 +38,20 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
     };
     let update_phm_shader = device.create_shader_module(update_phm_desc);
 
+    let update_food_desc = wgpu::ShaderModuleDescriptor {
+        label: Some("Update Food Shader"),
+        source: wgpu::ShaderSource::Wgsl(
+            include_str!("../shaders/compute/update_food.wgsl").into(),
+        ),
+    };
+    let update_food_shader = device.create_shader_module(update_food_desc);
+
     ShaderModules {
         v_shader,
         f_shader,
         update_slime_shader,
         update_phm_shader,
+        update_food_shader,
     }
 }
 
@@ -56,19 +65,20 @@ pub(crate) fn init_params() -> Params {
     };
 
     let slime_params = SlimeParams {
-        max_velocity: 0.0005,
-        min_velocity: -0.0005,
+        max_velocity: 0.003,
+        min_velocity: -0.003,
         turn_factor: 0.001,
-        avoid_factor: 0.001,
-        sensor_dist: 0.02,
+        avoid_factor: -0.006,
+        sensor_dist: 0.03,
         sensor_offset: 1.0472, // 60degrees in Radians
-        sensor_radius: 0.01,
+        sensor_radius: 0.001,
+        brownian_offset: 0.00001,
     };
 
     let pheremone_params = PheremoneParams {
-        deposition_amount: 0.003,
-        diffusion_factor: 0.4,
-        decay_factor: 0.95,
+        deposition_amount: 0.001,
+        diffusion_factor: 0.3,
+        decay_factor: 0.985,
     };
 
     Params {
@@ -109,6 +119,20 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         },
     );
 
+    let food_coords_buf = wgpu::util::DeviceExt::create_buffer_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("Texture Extent Buffer"),
+            contents: bytemuck::cast_slice(&[
+                [SCREEN_WIDTH / 3, SCREEN_HEIGHT / 4],
+                [SCREEN_WIDTH / 5 * 2, SCREEN_HEIGHT / 4 * 3],
+                [SCREEN_WIDTH / 4 * 2, SCREEN_HEIGHT / 3 * 2],
+                [SCREEN_WIDTH / 7 * 3, SCREEN_HEIGHT / 11 * 2],
+            ]),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        },
+    );
+
     // PARAMETER BUFFERS
     let view_params_buf = wgpu::util::DeviceExt::create_buffer_init(
         device,
@@ -137,6 +161,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
                 params.slime_params.sensor_dist,
                 params.slime_params.sensor_offset,
                 params.slime_params.sensor_radius,
+                params.slime_params.brownian_offset,
             ]),
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         },
@@ -192,6 +217,7 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         vertex_buf,
         time_uniform_buf,
         const_uniform_buf,
+        food_coords_buf,
         view_params_buf,
         generic_debug_buf,
         cpu_read_generic_debug_buf,
@@ -446,6 +472,66 @@ pub(crate) fn init_bind_groups(
         label: Some("sampled_texture_bg"),
     });
 
+    let food_bgl =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::ReadWrite,
+                        format: wgpu::TextureFormat::Rgba32Float,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<[u32; 2]>() as _
+                        ),
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<TimeUniform>() as _
+                        ),
+                    },
+                    count: None,
+                },
+            ],
+            label: Some("food_bgl"),
+        });
+
+    let food_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        layout: &food_bgl,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&textures.phm_tex_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: buffers.food_coords_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: buffers.time_uniform_buf.as_entire_binding(),
+            },
+        ],
+        label: Some("food_bg"),
+    });
+
     BindGroups {
         uniform_bg,
         uniform_bgl,
@@ -457,6 +543,8 @@ pub(crate) fn init_bind_groups(
         texture_bgl,
         sampled_texture_bg,
         sampled_texture_bgl,
+        food_bg,
+        food_bgl,
     }
 }
 
@@ -530,10 +618,24 @@ pub(crate) fn init_pipelines(
         entry_point: "update_pheremone_heatmap",
     });
 
+    let food_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("Compute Food Layout"),
+        bind_group_layouts: &[&bind_groups.food_bgl],
+        push_constant_ranges: &[],
+    });
+
+    let update_food_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Update Food Pipeline"),
+        layout: Some(&food_pipeline_layout),
+        module: &shader_modules.update_food_shader,
+        entry_point: "update_food",
+    });
+
     Pipelines {
         render: render_pipeline,
         update_slime: update_slime_pipeline,
         update_phm: update_phm_pipeline,
+        update_food: update_food_pipeline,
     }
 }
 
@@ -543,12 +645,12 @@ fn init_agents_data(num_agents: usize) -> Vec<f32> {
 
     for _ in 0..num_agents {
         // Generate random position between 0 and 1
-        let pos_x = rng.gen_range(0.0..=1.0);
-        let pos_y = rng.gen_range(0.0..=1.0);
+        let pos_x = rng.gen_range(0.40..=0.60);
+        let pos_y = rng.gen_range(0.30..=0.70);
 
-        // Generate random velocity between -0.0002 and 0.0002
-        let vel_x = rng.gen_range(-0.0002..=0.0002);
-        let vel_y = rng.gen_range(-0.0002..=0.0002);
+        // Generate random velocity between sp.min_velocity and sp.max_velocity
+        let vel_x = rng.gen_range(-0.003..=0.003);
+        let vel_y = rng.gen_range(-0.003..=0.003);
 
         // Encode position and velocity into a vec4
         let agent_data = [pos_x, pos_y, vel_x, vel_y];
@@ -560,17 +662,6 @@ fn init_agents_data(num_agents: usize) -> Vec<f32> {
 }
 
 pub(crate) fn init_textures(device: &wgpu::Device, queue: &wgpu::Queue) -> Textures {
-    // let mut texture_size = 0;
-
-    // for level in 0..MIP_LEVEL_COUNT {
-    //     let level_width = SCREEN_WIDTH >> level;
-    //     let level_height = SCREEN_HEIGHT >> level;
-    //     texture_size +=
-    //         level_width as usize * level_height as usize * 4 * (std::mem::size_of::<f32>());
-    // }
-
-    // const TEXTURE_SIZE: usize = texture_size;
-
     let phm_tex_view_desc = wgpu::TextureViewDescriptor {
         label: Some("Phermone - View Descriptor"),
         format: Some(wgpu::TextureFormat::Rgba32Float),
