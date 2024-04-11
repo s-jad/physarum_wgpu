@@ -3,9 +3,10 @@ pub(crate) const SCREEN_HEIGHT: u32 = 768;
 pub(crate) const DISPATCH_SIZE_X: u32 = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
 pub(crate) const DISPATCH_SIZE_Y: u32 = ((SCREEN_HEIGHT as u32).saturating_add(32)) / 32;
 
-pub(crate) const AGENT_TEX_WIDTH: usize = 1024;
-pub(crate) const AGENT_TEX_HEIGHT: usize = 1024;
+pub(crate) const AGENT_TEX_WIDTH: usize = 512;
+pub(crate) const AGENT_TEX_HEIGHT: usize = 512;
 pub(crate) const NUM_AGENTS: usize = AGENT_TEX_HEIGHT * AGENT_TEX_WIDTH;
+
 pub(crate) const PHM_TEX_BUF_SIZE: usize =
     SCREEN_WIDTH as usize * SCREEN_HEIGHT as usize * 4 * (std::mem::size_of::<f32>());
 
@@ -56,6 +57,7 @@ pub(crate) struct Buffers {
     pub(crate) vertex_buf: wgpu::Buffer,
     pub(crate) time_uniform_buf: wgpu::Buffer,
     pub(crate) const_uniform_buf: wgpu::Buffer,
+    pub(crate) food_coords_buf: wgpu::Buffer,
     pub(crate) view_params_buf: wgpu::Buffer,
     pub(crate) generic_debug_buf: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug_buf: wgpu::Buffer,
@@ -76,6 +78,8 @@ pub(crate) struct BindGroups {
     pub(crate) texture_bgl: wgpu::BindGroupLayout,
     pub(crate) sampled_texture_bg: wgpu::BindGroup,
     pub(crate) sampled_texture_bgl: wgpu::BindGroupLayout,
+    pub(crate) food_bg: wgpu::BindGroup,
+    pub(crate) food_bgl: wgpu::BindGroupLayout,
 }
 
 #[derive(Debug)]
@@ -84,6 +88,7 @@ pub(crate) struct ShaderModules {
     pub(crate) f_shader: wgpu::ShaderModule,
     pub(crate) update_slime_shader: wgpu::ShaderModule,
     pub(crate) update_phm_shader: wgpu::ShaderModule,
+    pub(crate) update_food_shader: wgpu::ShaderModule,
 }
 
 #[derive(Debug)]
@@ -91,6 +96,7 @@ pub(crate) struct Pipelines {
     pub(crate) render: wgpu::RenderPipeline,
     pub(crate) update_slime: wgpu::ComputePipeline,
     pub(crate) update_phm: wgpu::ComputePipeline,
+    pub(crate) update_food: wgpu::ComputePipeline,
 }
 
 #[derive(Debug)]
@@ -123,6 +129,7 @@ pub(crate) struct SlimeParams {
     pub(crate) sensor_dist: f32,
     pub(crate) sensor_offset: f32,
     pub(crate) sensor_radius: f32,
+    pub(crate) brownian_offset: f32,
 }
 
 #[repr(C)]
