@@ -4,10 +4,10 @@ use crate::{
         init_textures,
     },
     updates::update_functions::{
-        update_agent_position, update_cpu_read_buffers, update_pheremone_trails,
+        update_agent_position, update_cpu_read_buffers, update_food, update_pheremone_trails,
     },
     BindGroups, Buffers, Params, Pipelines, ShaderModules, Textures, DISPATCH_SIZE_X,
-    DISPATCH_SIZE_Y, VERTICES,
+    DISPATCH_SIZE_Y, SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
 };
 use std::sync::Arc;
 
@@ -127,6 +127,10 @@ impl<'a> State<'a> {
     }
 
     pub(crate) fn update(&mut self) {
+        if self.get_time() as u32 % 10 == 0 {
+            update_food(&self);
+        }
+
         update_agent_position(&self);
         update_pheremone_trails(&self);
         update_cpu_read_buffers(&self);
@@ -189,5 +193,17 @@ impl<'a> State<'a> {
 
     pub(crate) fn get_time(&self) -> f32 {
         self.app_time.elapsed().as_secs_f32()
+    }
+
+    pub(crate) fn generate_food_coords(&mut self) -> ([u32; 2], [u32; 2], [u32; 2]) {
+        let mut rng = rand::thread_rng();
+        let rand_x1 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_WIDTH);
+        let rand_y1 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_HEIGHT);
+        let rand_x2 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_WIDTH);
+        let rand_y2 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_HEIGHT);
+        let rand_x3 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_WIDTH);
+        let rand_y3 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_HEIGHT);
+
+        return ([rand_x1, rand_y1], [rand_x2, rand_y2], [rand_x3, rand_y3]);
     }
 }
