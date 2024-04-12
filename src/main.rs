@@ -7,7 +7,7 @@ mod updates;
 
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, MouseButton, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
@@ -23,8 +23,8 @@ fn main() {
         .expect("window should open");
 
     let mut state = futures::executor::block_on(State::new(window.into()));
-
     println!("num agents: {NUM_AGENTS}");
+
     event_loop
         .run(move |event, elwt| match event {
             Event::WindowEvent { ref event, .. } => match event {
