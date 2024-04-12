@@ -2,7 +2,6 @@ const SCREEN_WIDTH: f32 = 1376.0;
 const SCREEN_HEIGHT: f32 = 768.0;
 const I_SCREEN_WIDTH: i32 = 1376;
 const I_SCREEN_HEIGHT: i32 = 768;
-const DEPOSITION_RANGE: f32 = 0.005;
 const MIN_POSITIVE_F32: f32 = 0x1.0p-126f;
 
 struct TimeUniform {
@@ -74,7 +73,8 @@ fn pheremone_diffusion(tex_coords: vec2<u32>) {
   let range: i32 = 2; // Expensive
 
   let tex_color: vec4<f32> = textureLoad(phm, tex_coords);
-
+  
+  // Avoid repeated u32 -> f32 in middle of nested loop
   var fx = 0.0;
   var fy = 0.0;
 
@@ -84,7 +84,7 @@ fn pheremone_diffusion(tex_coords: vec2<u32>) {
       let neighbor_coords = get_neighbour_coords(txc_int, x, y);
       let neighbor_color: vec4<f32> = textureLoad(phm, neighbor_coords);
 
-      let distance_weight: f32 = 1.0 / (1.0 + distance(vec2<f32>(fx, fy), vec2<f32>(0.0, 0.0)));
+      let distance_weight: f32 = 1.0 / (1.0 + distance(vec2(fx, fy), vec2(0.0)));
 
       total_intensity += neighbor_color.rgb * pp.diffusion_factor;
       total_weight += pp.diffusion_factor;
@@ -104,7 +104,7 @@ fn pheremone_diffusion(tex_coords: vec2<u32>) {
 }
 
 fn waste_product_buildup(p_intensity: f32) -> f32 {
-  return step(0.75, p_intensity)*0.001 + step(p_intensity, 0.75)*-0.001;
+  return step(0.85, p_intensity)*0.001 + step(p_intensity, 0.85)*-0.001;
 }
 
 @compute 
@@ -117,7 +117,7 @@ fn update_pheremone_heatmap(@builtin(global_invocation_id) id: vec3<u32>) {
   var clr: vec4<f32> = textureLoad(phm, tex_coords);
   clr.g += waste_product_buildup(clr.r);
   clr.r *= pp.decay_factor;
-  clr.b = clr.b - smoothstep(0.01, 1.0, clr.r*0.04);
+  clr.b = clr.b - smoothstep(0.01, 1.0, clr.r*0.05);
 
   clr = clamp(vec4(0.0), vec4(1.0), clr);
 

@@ -148,7 +148,7 @@ fn quiescence(agent: vec4<f32>, id: vec2<f32>) -> QuiescenceResult {
   var s2_total: vec4<f32> = vec4(0.0);
   var s3_total: vec4<f32> = vec4(0.0);
 
-  let s_radius = 3;
+  let s_radius = 2;
   
   let sensors = calculate_sensor_positions(agent);
   

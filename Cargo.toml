@@ -15,5 +15,7 @@ lto = "thin"
 [dependencies]
 bytemuck = { version = "1.15.0", features = ["derive"] }
 futures = "0.3.30"
+image = "0.25.1"
+rand = "0.8.5"
 wgpu = { version = "0.19.3", features = ["api_log_info", "strict_asserts"] }
 winit = "0.29.15"

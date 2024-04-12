@@ -20,7 +20,7 @@ fn pcg2d(p: vec2<u32>) -> vec2<f32> {
     v.x += v.y * 1664525u; v.y += v.x * 1664525u;
     v ^= v >> vec2<u32>(16u);
 
-    // Normalize the output to the range [0, 1]
+    // Normalize the output to the range [0f32, 1f32]
     return vec2<f32>(f32(v.x), f32(v.y)) / 0xFFFFFFFF;
 }
 
