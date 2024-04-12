@@ -3,8 +3,8 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     vertices_as_bytes, BindGroups, Buffers, ConstUniforms, Params, PheremoneParams, Pipelines,
-    ShaderModules, SlimeParams, Textures, TimeUniform, ViewParams, AGENT_TEX_HEIGHT,
-    AGENT_TEX_WIDTH, NUM_AGENTS, PHM_TEX_BUF_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
+    ShaderModules, SlimeParams, Textures, TimeUniform, AGENT_TEX_HEIGHT, AGENT_TEX_WIDTH,
+    PHM_TEX_BUF_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
 };
 
 pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
@@ -56,33 +56,24 @@ pub(crate) fn init_shader_modules(device: &wgpu::Device) -> ShaderModules {
 }
 
 pub(crate) fn init_params() -> Params {
-    let view_params = ViewParams {
-        shift_modifier: 1.0,
-        x_shift: 0.0,
-        y_shift: 0.0,
-        zoom: 1.0,
-        time_modifier: 0.01,
-    };
-
     let slime_params = SlimeParams {
         max_velocity: 0.003,
         min_velocity: -0.003,
-        turn_factor: 0.001,
-        avoid_factor: -0.006,
-        sensor_dist: 0.03,
+        turn_factor: 0.002,
+        avoid_factor: -0.003,
+        sensor_dist: 0.01,
         sensor_offset: 1.0472, // 60degrees in Radians
         sensor_radius: 0.001,
-        brownian_offset: 0.00001,
+        brownian_offset: 0.000005,
     };
 
     let pheremone_params = PheremoneParams {
         deposition_amount: 0.001,
-        diffusion_factor: 0.3,
+        diffusion_factor: 0.1,
         decay_factor: 0.985,
     };
 
     Params {
-        view_params,
         slime_params,
         pheremone_params,
     }
@@ -134,21 +125,6 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
     );
 
     // PARAMETER BUFFERS
-    let view_params_buf = wgpu::util::DeviceExt::create_buffer_init(
-        device,
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("Parameters Storage Buffer"),
-            contents: bytemuck::cast_slice(&[
-                params.view_params.shift_modifier,
-                params.view_params.x_shift,
-                params.view_params.y_shift,
-                params.view_params.zoom,
-                params.view_params.time_modifier,
-            ]),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        },
-    );
-
     let slime_params_buf = wgpu::util::DeviceExt::create_buffer_init(
         device,
         &wgpu::util::BufferInitDescriptor {
@@ -197,32 +173,13 @@ pub(crate) fn init_buffers(device: &wgpu::Device, params: &Params) -> Buffers {
         mapped_at_creation: false,
     });
 
-    let generic_debug_array_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Debug Shaders Buffer - ARRAY"),
-        size: (std::mem::size_of::<[[f32; 4]; NUM_AGENTS]>()) as wgpu::BufferAddress,
-        usage: wgpu::BufferUsages::STORAGE
-            | wgpu::BufferUsages::COPY_SRC
-            | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-
-    let cpu_read_generic_debug_array_buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("CPU Readable Buffer ARRAY - Debug Shaders"),
-        size: (std::mem::size_of::<[[f32; 4]; NUM_AGENTS]>()) as wgpu::BufferAddress,
-        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-        mapped_at_creation: false,
-    });
-
     Buffers {
         vertex_buf,
         time_uniform_buf,
         const_uniform_buf,
         food_coords_buf,
-        view_params_buf,
         generic_debug_buf,
         cpu_read_generic_debug_buf,
-        generic_debug_array_buf,
-        cpu_read_generic_debug_array_buf,
         slime_params_buf,
         pheremone_params_buf,
     }
@@ -279,29 +236,6 @@ pub(crate) fn init_bind_groups(
         label: Some("uniforms_bind_group"),
     });
 
-    let param_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::FRAGMENT,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<ViewParams>() as _),
-            },
-            count: None,
-        }],
-        label: Some("variable_bind_group_layout"),
-    });
-
-    let param_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &param_bgl,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: buffers.view_params_buf.as_entire_binding(),
-        }],
-        label: Some("view_params_bind_group"),
-    });
-
     let compute_bgl =
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
@@ -326,18 +260,6 @@ pub(crate) fn init_bind_groups(
                         min_binding_size: wgpu::BufferSize::new(
                             std::mem::size_of::<PheremoneParams>() as _,
                         ),
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 8,
-                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<
-                            [[f32; 4]; NUM_AGENTS],
-                        >() as _),
                     },
                     count: None,
                 },
@@ -367,10 +289,6 @@ pub(crate) fn init_bind_groups(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: buffers.pheremone_params_buf.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 8,
-                resource: buffers.generic_debug_array_buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 9,
@@ -535,8 +453,6 @@ pub(crate) fn init_bind_groups(
     BindGroups {
         uniform_bg,
         uniform_bgl,
-        param_bg,
-        param_bgl,
         compute_bg,
         compute_bgl,
         texture_bg,
@@ -558,7 +474,6 @@ pub(crate) fn init_pipelines(
         bind_group_layouts: &[
             &bind_groups.compute_bgl,
             &bind_groups.uniform_bgl,
-            &bind_groups.param_bgl,
             &bind_groups.sampled_texture_bgl,
         ],
         push_constant_ranges: &[],
@@ -643,14 +558,19 @@ fn init_agents_data(num_agents: usize) -> Vec<f32> {
     let mut rng = rand::thread_rng();
     let mut agents_data = Vec::with_capacity(num_agents * 4); // each agent has 4 params
 
-    for _ in 0..num_agents {
-        // Generate random position between 0 and 1
-        let pos_x = rng.gen_range(0.40..=0.60);
-        let pos_y = rng.gen_range(0.30..=0.70);
+    for i in 0..num_agents {
+        let (pos_x, pos_y) = match i % 5 {
+            0 => (0.89, 0.73),
+            1 => (0.18, 0.86),
+            2 => (0.54, 0.47),
+            3 => (0.73, 0.17),
+            4 => (0.27, 0.33),
+            _ => (0.5, 0.5),
+        };
 
         // Generate random velocity between sp.min_velocity and sp.max_velocity
-        let vel_x = rng.gen_range(-0.003..=0.003);
-        let vel_y = rng.gen_range(-0.003..=0.003);
+        let vel_x = rng.gen_range(-0.002..=0.002);
+        let vel_y = rng.gen_range(-0.004..=0.004);
 
         // Encode position and velocity into a vec4
         let agent_data = [pos_x, pos_y, vel_x, vel_y];
