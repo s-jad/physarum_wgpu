@@ -6,8 +6,6 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 use crate::updates::update_functions::update_pheremone_params_buffer;
 use crate::updates::update_functions::update_slime_params_buffer;
-use crate::updates::update_functions::update_view_params_buffer;
-use crate::NUM_AGENTS;
 
 use super::app_state::State;
 
@@ -16,7 +14,6 @@ pub(crate) enum KeyboardMode {
     DEBUG,
     SLIME,
     PHEREMONES,
-    VIEW,
     PRINT,
 }
 
@@ -30,7 +27,7 @@ impl KeyboardState {
     pub(crate) fn new() -> Self {
         Self {
             keys: HashSet::new(),
-            mode: KeyboardMode::VIEW,
+            mode: KeyboardMode::PRINT,
         }
     }
 
@@ -105,11 +102,6 @@ pub(crate) fn update_controls(state: &mut State) {
         state.controls.set_mode(KeyboardMode::DEBUG);
     } else if state
         .controls
-        .key_pressed(PhysicalKey::Code(KeyCode::Digit1))
-    {
-        state.controls.set_mode(KeyboardMode::VIEW);
-    } else if state
-        .controls
         .key_pressed(PhysicalKey::Code(KeyCode::Digit2))
     {
         state.controls.set_mode(KeyboardMode::SLIME);
@@ -129,7 +121,6 @@ pub(crate) fn update_controls(state: &mut State) {
         KeyboardMode::DEBUG => debug_controls(state),
         KeyboardMode::SLIME => slime_controls(state),
         KeyboardMode::PHEREMONES => pheremone_controls(state),
-        KeyboardMode::VIEW => view_controls(state),
         KeyboardMode::PRINT => print_controls(state),
     }
 }
@@ -144,15 +135,7 @@ fn debug_controls(state: &mut State) {
             "Debug",
         );
         thread::sleep(time::Duration::from_millis(50));
-        state.controls.set_mode(KeyboardMode::VIEW);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyA)) {
-        print_gpu_data::<[[f32; 4]; 1024]>(
-            &state.device,
-            &state.buffers.cpu_read_generic_debug_array_buf,
-            "Debug",
-        );
-        thread::sleep(time::Duration::from_millis(50));
-        state.controls.set_mode(KeyboardMode::VIEW);
+        state.controls.set_mode(KeyboardMode::PRINT);
     }
 }
 
@@ -227,46 +210,6 @@ fn pheremone_controls(state: &mut State) {
     }
 }
 
-fn view_controls(state: &mut State) {
-    let pressed = state.controls.get_keys();
-
-    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowLeft)) {
-        state.params.view_params.x_shift -=
-            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
-        update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowRight)) {
-        state.params.view_params.x_shift +=
-            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
-        update_view_params_buffer(state);
-    }
-
-    if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowUp)) {
-        state.params.view_params.y_shift +=
-            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
-        update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::ArrowDown)) {
-        state.params.view_params.y_shift -=
-            (0.01 * state.params.view_params.shift_modifier) / state.params.view_params.zoom;
-        update_view_params_buffer(state);
-    }
-
-    if pressed.contains(&PhysicalKey::Code(KeyCode::PageDown)) {
-        state.params.view_params.shift_modifier -= 0.1;
-        update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::PageUp)) {
-        state.params.view_params.shift_modifier += 0.1;
-        update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyX)) {
-        let mz = state.params.view_params.zoom;
-        state.params.view_params.zoom -= 0.1 * mz;
-        update_view_params_buffer(state);
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyZ)) {
-        let mz = state.params.view_params.zoom;
-        state.params.view_params.zoom += 0.1 * mz;
-        update_view_params_buffer(state);
-    }
-}
-
 fn print_controls(state: &State) {
     let pressed = state.controls.get_keys();
 
@@ -276,10 +219,7 @@ fn print_controls(state: &State) {
     }
 
     // PRINT CURRENT PARAMETER VALUES ----------------------------------------------
-    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyI)) {
-        println!("\nview_params:\n{:#?}\n", state.params.view_params);
-        thread::sleep(time::Duration::from_millis(50));
-    } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
+    if pressed.contains(&PhysicalKey::Code(KeyCode::KeyS)) {
         println!("\nslime_params:\n{:#?}", state.params.slime_params);
         thread::sleep(time::Duration::from_millis(50));
     } else if pressed.contains(&PhysicalKey::Code(KeyCode::KeyP)) {
