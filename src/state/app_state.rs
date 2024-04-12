@@ -6,28 +6,23 @@ use crate::{
     updates::update_functions::{
         update_agent_position, update_cpu_read_buffers, update_food, update_pheremone_trails,
     },
-    BindGroups, Buffers, Params, Pipelines, ShaderModules, Textures, DISPATCH_SIZE_X,
-    DISPATCH_SIZE_Y, SCREEN_HEIGHT, SCREEN_WIDTH, VERTICES,
+    BindGroups, Buffers, Params, Pipelines, VERTICES,
 };
 use std::sync::Arc;
 
-use super::control_state::{print_gpu_data, update_controls, KeyboardState};
+use super::control_state::{update_controls, KeyboardState};
 
 #[derive(Debug)]
 pub(crate) struct State<'a> {
-    pub(crate) instance: wgpu::Instance,
-    pub(crate) adapter: wgpu::Adapter,
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) surface: wgpu::Surface<'a>,
     pub(crate) surface_config: wgpu::SurfaceConfiguration,
     pub(crate) size: winit::dpi::PhysicalSize<u32>,
-    pub(crate) shader_modules: ShaderModules,
     pub(crate) params: Params,
     pub(crate) buffers: Buffers,
     pub(crate) bind_groups: BindGroups,
     pub(crate) pipelines: Pipelines,
-    pub(crate) textures: Textures,
     pub(crate) controls: KeyboardState,
     pub(crate) app_time: std::time::Instant,
     // Keep window at the bottom,
@@ -105,19 +100,15 @@ impl<'a> State<'a> {
         let controls = KeyboardState::new();
 
         Self {
-            instance,
-            adapter,
             device,
             queue,
             surface,
             surface_config,
             size,
             pipelines,
-            shader_modules,
             params,
             buffers,
             bind_groups,
-            textures,
             controls,
             app_time,
             // Keep at bottom, must be dropped after surface
@@ -167,8 +158,7 @@ impl<'a> State<'a> {
 
             render_pass.set_bind_group(0, &self.bind_groups.compute_bg, &[]);
             render_pass.set_bind_group(1, &self.bind_groups.uniform_bg, &[]);
-            render_pass.set_bind_group(2, &self.bind_groups.param_bg, &[]);
-            render_pass.set_bind_group(3, &self.bind_groups.sampled_texture_bg, &[]);
+            render_pass.set_bind_group(2, &self.bind_groups.sampled_texture_bg, &[]);
             render_pass.set_vertex_buffer(0, self.buffers.vertex_buf.slice(..));
 
             let vertex_range = 0..VERTICES.len() as u32;
@@ -193,17 +183,5 @@ impl<'a> State<'a> {
 
     pub(crate) fn get_time(&self) -> f32 {
         self.app_time.elapsed().as_secs_f32()
-    }
-
-    pub(crate) fn generate_food_coords(&mut self) -> ([u32; 2], [u32; 2], [u32; 2]) {
-        let mut rng = rand::thread_rng();
-        let rand_x1 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_WIDTH);
-        let rand_y1 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_HEIGHT);
-        let rand_x2 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_WIDTH);
-        let rand_y2 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_HEIGHT);
-        let rand_x3 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_WIDTH);
-        let rand_y3 = rand::Rng::gen_range(&mut rng, 0..=SCREEN_HEIGHT);
-
-        return ([rand_x1, rand_y1], [rand_x2, rand_y2], [rand_x3, rand_y3]);
     }
 }
