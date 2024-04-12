@@ -1,23 +1,7 @@
 use crate::{
-    state::app_state::State, PheremoneParams, SlimeParams, ViewParams, DISPATCH_SIZE_X,
-    DISPATCH_SIZE_Y, NUM_AGENTS,
+    state::app_state::State, PheremoneParams, SlimeParams, AGENT_DISPATCH_SIZE_X,
+    AGENT_DISPATCH_SIZE_Y, DISPATCH_SIZE_X, DISPATCH_SIZE_Y,
 };
-
-pub(crate) fn update_view_params_buffer(state: &State) {
-    let new_view_params = ViewParams {
-        shift_modifier: state.params.view_params.shift_modifier,
-        x_shift: state.params.view_params.x_shift,
-        y_shift: state.params.view_params.y_shift,
-        zoom: state.params.view_params.zoom,
-        time_modifier: state.params.view_params.time_modifier,
-    };
-
-    state.queue.write_buffer(
-        &state.buffers.view_params_buf,
-        0,
-        bytemuck::cast_slice(&[new_view_params]),
-    );
-}
 
 pub(crate) fn update_slime_params_buffer(state: &State) {
     let new_slime_params = SlimeParams {
@@ -69,7 +53,8 @@ pub(crate) fn update_agent_position(state: &State) {
         compute_pass.set_bind_group(0, &state.bind_groups.compute_bg, &[]);
         compute_pass.set_bind_group(1, &state.bind_groups.uniform_bg, &[]);
         compute_pass.set_bind_group(2, &state.bind_groups.texture_bg, &[]);
-        compute_pass.dispatch_workgroups(DISPATCH_SIZE_X, DISPATCH_SIZE_Y, 1); // Adjust workgroup size as needed
+        compute_pass.dispatch_workgroups(AGENT_DISPATCH_SIZE_X, AGENT_DISPATCH_SIZE_Y, 1);
+        // Adjust workgroup size as needed
     }
 
     state.queue.submit(Some(encoder.finish()));
@@ -98,7 +83,6 @@ pub(crate) fn update_pheremone_trails(state: &State) {
 }
 
 pub(crate) fn update_food(state: &State) {
-    println!("updating food!!");
     let mut encoder = state
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -131,14 +115,6 @@ pub(crate) fn update_cpu_read_buffers(state: &State) {
         &state.buffers.cpu_read_generic_debug_buf,
         0,
         (std::mem::size_of::<[f32; 4]>()) as wgpu::BufferAddress,
-    );
-
-    encoder.copy_buffer_to_buffer(
-        &state.buffers.generic_debug_array_buf,
-        0,
-        &state.buffers.cpu_read_generic_debug_array_buf,
-        0,
-        (std::mem::size_of::<[[f32; 4]; NUM_AGENTS]>()) as wgpu::BufferAddress,
     );
 
     state.queue.submit(Some(encoder.finish()));
