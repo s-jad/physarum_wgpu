@@ -3,8 +3,10 @@ pub(crate) const SCREEN_HEIGHT: u32 = 768;
 pub(crate) const DISPATCH_SIZE_X: u32 = ((SCREEN_WIDTH as u32).saturating_add(32)) / 32;
 pub(crate) const DISPATCH_SIZE_Y: u32 = ((SCREEN_HEIGHT as u32).saturating_add(32)) / 32;
 
-pub(crate) const AGENT_TEX_WIDTH: usize = 512;
-pub(crate) const AGENT_TEX_HEIGHT: usize = 512;
+pub(crate) const AGENT_TEX_WIDTH: usize = 1024;
+pub(crate) const AGENT_TEX_HEIGHT: usize = 1024;
+pub(crate) const AGENT_DISPATCH_SIZE_X: u32 = 1024 / 32;
+pub(crate) const AGENT_DISPATCH_SIZE_Y: u32 = 1024 / 32;
 pub(crate) const NUM_AGENTS: usize = AGENT_TEX_HEIGHT * AGENT_TEX_WIDTH;
 
 pub(crate) const PHM_TEX_BUF_SIZE: usize =
@@ -58,11 +60,8 @@ pub(crate) struct Buffers {
     pub(crate) time_uniform_buf: wgpu::Buffer,
     pub(crate) const_uniform_buf: wgpu::Buffer,
     pub(crate) food_coords_buf: wgpu::Buffer,
-    pub(crate) view_params_buf: wgpu::Buffer,
     pub(crate) generic_debug_buf: wgpu::Buffer,
     pub(crate) cpu_read_generic_debug_buf: wgpu::Buffer,
-    pub(crate) generic_debug_array_buf: wgpu::Buffer,
-    pub(crate) cpu_read_generic_debug_array_buf: wgpu::Buffer,
     pub(crate) slime_params_buf: wgpu::Buffer,
     pub(crate) pheremone_params_buf: wgpu::Buffer,
 }
@@ -70,8 +69,6 @@ pub(crate) struct Buffers {
 pub(crate) struct BindGroups {
     pub(crate) uniform_bg: wgpu::BindGroup,
     pub(crate) uniform_bgl: wgpu::BindGroupLayout,
-    pub(crate) param_bg: wgpu::BindGroup,
-    pub(crate) param_bgl: wgpu::BindGroupLayout,
     pub(crate) compute_bg: wgpu::BindGroup,
     pub(crate) compute_bgl: wgpu::BindGroupLayout,
     pub(crate) texture_bg: wgpu::BindGroup,
@@ -114,7 +111,6 @@ pub(crate) struct Textures {
 // PARAMETERS
 #[derive(Debug)]
 pub(crate) struct Params {
-    pub(crate) view_params: ViewParams,
     pub(crate) slime_params: SlimeParams,
     pub(crate) pheremone_params: PheremoneParams,
 }
@@ -138,14 +134,4 @@ pub(crate) struct PheremoneParams {
     pub(crate) deposition_amount: f32,
     pub(crate) diffusion_factor: f32,
     pub(crate) decay_factor: f32,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct ViewParams {
-    pub(crate) shift_modifier: f32,
-    pub(crate) x_shift: f32,
-    pub(crate) y_shift: f32,
-    pub(crate) zoom: f32,
-    pub(crate) time_modifier: f32,
 }
