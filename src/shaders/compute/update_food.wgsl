@@ -25,10 +25,10 @@ fn pcg2d(p: vec2<u32>) -> vec2<f32> {
 }
 
 @compute 
-@workgroup_size(1, 1, 1) 
+@workgroup_size(2, 2, 1) 
 fn update_food(@builtin(global_invocation_id) id: vec3<u32>) {
   let tex_coords = id.xy;
-  let ts = sin(tu.time);
+  let ts = sin(tu.time*0.173);
   let food_coords = pcg2d(vec2(u32(ts*23.0), u32(ts*17.0)));
   let fc = vec2(u32(food_coords.x * SCREEN_WIDTH), u32(food_coords.y * SCREEN_HEIGHT));
 
